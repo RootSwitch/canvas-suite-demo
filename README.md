@@ -22,8 +22,14 @@ What you're looking at:
   files. Same diagram, different night.
 - The **CrossCanvas** tile opens the editor's own live demo (it has run on
   GitHub Pages for a while - fully functional, entirely in-browser).
-- SNMPCanvas / SyslogCanvas / AlertCanvas tiles link to their repos for now;
-  shimmed demo UIs for them are the planned next step.
+- The **SNMPCanvas** tile opens the real SNMPCanvas frontend over the same
+  synthetic fleet: the devices table, per-device pages (CPU/memory cards,
+  interface tables with code chips), 24-hour traffic graphs with
+  95th-percentile lines, and the UPS page showing the battery / runtime /
+  state / power / voltage sensor kinds. History is generated on the fly, so
+  the graphs are always a full, fresh-looking day.
+- SyslogCanvas / AlertCanvas tiles link to their repos for now; shimmed demo
+  UIs for them are the planned next step.
 
 ## How this repo works
 
