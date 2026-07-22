@@ -28,8 +28,17 @@ What you're looking at:
   95th-percentile lines, and the UPS page showing the battery / runtime /
   state / power / voltage sensor kinds. History is generated on the fly, so
   the graphs are always a full, fresh-looking day.
-- SyslogCanvas / AlertCanvas tiles link to their repos for now; shimmed demo
-  UIs for them are the planned next step.
+- The **SyslogCanvas** tile opens the real log UI over a deterministic
+  synthetic stream - firewall pass/blocks, switch link events, VM
+  migrations, SMB sessions, failed SSH attempts, and SNMP traps, one
+  message every few seconds forever. The filter bar genuinely works
+  (`host:nas-01`, `sev:<=4`, `proto:trap`, words, negation), as do paging
+  and the raw-message detail view.
+- The **AlertCanvas** tile opens the alerting UI mid-story: the Printer
+  down (crit) and the virtualization cluster hot (warn, via a per-host
+  override), the Watching page showing every value against its effective
+  rule, and History carrying the cleared power-event alarms the "2 AM
+  version" wall depicts - the two halves of the same incident.
 
 ## How this repo works
 
