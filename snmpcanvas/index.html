@@ -1,0 +1,43 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNMPCanvas</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="topbar">
+    <span class="brand">
+        <span class="logo">
+            <!-- The family easel mark (CrossCanvas/PingCanvas siblings), with
+                 an EKG trace on the canvas. Easel takes the theme accent via
+                 currentColor; the trace keeps the brand green. -->
+            <svg width="22" height="22" viewBox="0 0 64 64" fill="none" stroke="currentColor">
+                <path d="M32 5 L32 12" stroke-width="5" stroke-linecap="round"/>
+                <path d="M18 45 L12 59 M46 45 L52 59 M32 45 L32 59" stroke-width="5" stroke-linecap="round"/>
+                <rect x="9" y="12" width="46" height="34" rx="3" fill="#f4f1ea" stroke-width="4"/>
+                <polyline points="13.5,30 20,30 23,25.5 26,30 31,30 34,18 38,40.5 41,30 44.5,27 47.5,30 50.5,30"
+                          stroke="var(--se-logo-b)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </span>
+        <span class="brand-name">SNMPCanvas</span>
+    </span>
+    <nav id="nav" style="display:none">
+        <a href="#/devices" data-nav="devices">Devices</a>
+        <a href="#/settings" data-nav="settings">Settings</a>
+        <a id="nav-add" class="nav-add" role="button" tabindex="0" title="Add a device (works from any page)">+ Add device</a>
+    </nav>
+    <span class="topbar-spacer"></span>
+    <select id="theme-select" title="Theme"></select>
+    <button id="logout-btn" style="display:none">Log out</button>
+</div>
+<div id="main"></div>
+<dialog id="modal"></dialog>
+<script src="themes.js"></script>
+<script src="charts.js"></script>
+<script src="../demo/snmp-demo-api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

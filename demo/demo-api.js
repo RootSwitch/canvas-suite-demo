@@ -17,7 +17,7 @@
             // shimmed UIs are not built yet.
             url_crosscanvas: 'https://rootswitch.github.io/CrossCanvas/?sample=complex&fit=1',
             url_pingcanvas: 'kiosk/kiosk.html?board=data/board.xcanvas&status=data/status.json&snmp=data/snmp-status.json&staleMul=9999999',
-            url_snmpcanvas: 'https://github.com/RootSwitch/SNMPCanvas',
+            url_snmpcanvas: 'snmpcanvas/',
             url_syslogcanvas: 'https://github.com/RootSwitch/SyslogCanvas',
             url_alertcanvas: 'https://github.com/RootSwitch/AlertCanvas'
         },

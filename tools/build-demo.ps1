@@ -12,7 +12,8 @@
 [CmdletBinding()]
 param(
     [string]$LaunchCanvas = 'C:\Workspace\launchcanvas',
-    [string]$PingCanvas   = 'C:\Workspace\pingcanvas'
+    [string]$PingCanvas   = 'C:\Workspace\pingcanvas',
+    [string]$SNMPCanvas   = 'C:\Workspace\snmpcanvas\SNMPCanvas'
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
@@ -48,6 +49,22 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 # Everything the kiosk page needs, nothing server-side (web.config stays out).
 Get-ChildItem $pcKiosk -File | Where-Object { $_.Name -notin @('web.config', 'README.md') } |
     Copy-Item -Destination $dest -Force
+
+# ----- SNMPCanvas frontend -> snmpcanvas/ ------------------------------------
+Write-Host '==> Vendoring SNMPCanvas public/'
+$snmpPub = Join-Path $SNMPCanvas 'public'
+if (-not (Test-Path "$snmpPub\index.html")) { throw "SNMPCanvas public/ not found at $snmpPub" }
+$snmpDest = Join-Path $Root 'snmpcanvas'
+Remove-Item $snmpDest -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item $snmpPub $snmpDest -Recurse -Force
+# Inject the SNMP demo shim BEFORE app.js (fetch override must exist first).
+$sidx = Join-Path $snmpDest 'index.html'
+$shtml = Get-Content $sidx -Raw
+if ($shtml -notmatch 'snmp-demo-api\.js') {
+    $shtml = $shtml -replace '(<script src="app\.js"></script>)', ('<script src="../demo/snmp-demo-api.js"></script>' + "`n" + '$1')
+    Set-Content $sidx $shtml -Encoding utf8 -NoNewline
+    Write-Host '  ok SNMP demo shim injected'
+}
 
 # ----- fixtures -> kiosk/data ------------------------------------------------
 Write-Host '==> Placing fixtures'
