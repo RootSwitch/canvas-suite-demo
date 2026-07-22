@@ -1,0 +1,152 @@
+{
+ "schemaVersion": 3,
+ "generator": "snmpcanvas/0.5.0 (demo fixture)",
+ "generatedAt": "2099-01-01T00:00:00Z",
+ "pollIntervalSec": 30,
+ "devices": [
+  {
+   "name": "edge-fw",
+   "host": "10.20.0.15",
+   "status": "up"
+  },
+  {
+   "name": "core-sw",
+   "host": "10.20.0.16",
+   "status": "up"
+  },
+  {
+   "name": "web-01",
+   "host": "10.20.0.19",
+   "status": "up"
+  },
+  {
+   "name": "nas-01",
+   "host": "10.20.0.21",
+   "status": "up"
+  },
+  {
+   "name": "mon-01",
+   "host": "10.20.0.24",
+   "status": "up"
+  },
+  {
+   "name": "vhost-cluster",
+   "host": "10.20.0.25",
+   "status": "up"
+  },
+  {
+   "name": "ups-01",
+   "host": "10.20.0.44",
+   "status": "up"
+  }
+ ],
+ "interfaces": [
+  {
+   "id": "edge-fw:wan0",
+   "code": "XW",
+   "operStatus": "up",
+   "speedBps": 1000000000,
+   "inBps": 88000000,
+   "outBps": 21000000,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  },
+  {
+   "id": "edge-fw:cloud0",
+   "code": "XC",
+   "operStatus": "up",
+   "speedBps": 1000000000,
+   "inBps": 310000000,
+   "outBps": 84000000,
+   "inErrorsPerSec": 0,
+   "outErrorsPerSec": 0,
+   "inDiscardsPerSec": 0,
+   "outDiscardsPerSec": 0
+  }
+ ],
+ "metrics": [
+  {
+   "code": "wc",
+   "kind": "cpu",
+   "host": "web-01",
+   "display": "CPU 88%",
+   "value": 88,
+   "unit": "%",
+   "status": "warn"
+  },
+  {
+   "code": "vc",
+   "kind": "cpu",
+   "host": "vhost-cluster",
+   "display": "CPU 97%",
+   "value": 97,
+   "unit": "%",
+   "status": "crit"
+  },
+  {
+   "code": "vm",
+   "kind": "mem",
+   "host": "vhost-cluster",
+   "display": "Mem 74%",
+   "value": 74,
+   "unit": "%"
+  },
+  {
+   "code": "nf",
+   "kind": "fs",
+   "host": "nas-01",
+   "display": "Pool 71%",
+   "value": 71,
+   "unit": "%"
+  },
+  {
+   "code": "ct",
+   "kind": "temp",
+   "host": "core-sw",
+   "display": "67C",
+   "value": 67,
+   "unit": "C"
+  },
+  {
+   "code": "fu",
+   "kind": "uptime",
+   "host": "edge-fw",
+   "display": "up 142d",
+   "value": 12268800,
+   "unit": "s"
+  },
+  {
+   "code": "mm",
+   "kind": "mem",
+   "host": "mon-01",
+   "display": "Mem 71%",
+   "value": 71,
+   "unit": "%"
+  },
+  {
+   "code": "ub",
+   "kind": "battery",
+   "host": "ups-01",
+   "display": "Batt 64%",
+   "value": 64,
+   "unit": "%"
+  },
+  {
+   "code": "ur",
+   "kind": "runtime",
+   "host": "ups-01",
+   "display": "18m",
+   "value": 1080,
+   "unit": "s"
+  },
+  {
+   "code": "us",
+   "kind": "state",
+   "host": "ups-01",
+   "display": "ON BATTERY",
+   "value": 1
+  }
+ ]
+}

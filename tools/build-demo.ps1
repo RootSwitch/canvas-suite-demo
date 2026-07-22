@@ -55,5 +55,7 @@ New-Item -ItemType Directory -Force (Join-Path $dest 'data') | Out-Null
 Copy-Item (Join-Path $Root 'demo\fixtures\board.xcanvas')     (Join-Path $dest 'data\board.xcanvas') -Force
 Copy-Item (Join-Path $Root 'demo\fixtures\status.json')       (Join-Path $dest 'data\status.json') -Force
 Copy-Item (Join-Path $Root 'demo\fixtures\snmp-status.json')  (Join-Path $dest 'data\snmp-status.json') -Force
+Copy-Item (Join-Path $Root 'demo\fixtures\bad-status.json')      (Join-Path $dest 'data\bad-status.json') -Force
+Copy-Item (Join-Path $Root 'demo\fixtures\bad-snmp-status.json') (Join-Path $dest 'data\bad-snmp-status.json') -Force
 
 Write-Host '==> Done. Serve the repo root to preview; push to deploy Pages.'

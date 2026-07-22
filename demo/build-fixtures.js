@@ -103,5 +103,35 @@ const ping = JSON.parse(fs.readFileSync(path.join(DIR, 'status.json'), 'utf8'));
 ping.devices['10.20.0.44'] = { state: 'up', latencyMs: 2 };
 fs.writeFileSync(path.join(DIR, 'status.json'), JSON.stringify(ping, null, 1) + '\n');
 
+// --- the 2 AM version: same board, same codes, a power event in Building A --
+// Utility power is out at HQ. The UPS carries the racks (on battery, draining),
+// wall-powered gear is dark, the server room is warming, and HQ traffic has
+// collapsed to a trickle. Branches and cloud untouched - blast radius reads at
+// a glance. Board file is untouched: only the feeds differ.
+const badPing = JSON.parse(JSON.stringify(ping));
+const setState = (ip, state, lat) => { badPing.devices[ip] = { state, latencyMs: lat }; };
+setState('10.20.0.27', 'down', null);      // Finance WS (wall power)
+setState('10.20.0.28', 'down', null);      // Printer (was already the down one)
+setState('10.20.0.32', 'down', null);      // POE Camera (unbacked PoE leg)
+setState('10.20.0.18', 'degraded', 210);   // Wireless Controller struggling
+setState('10.20.0.11', 'up', 12);          // cloud VMs are FINE tonight -
+setState('10.20.0.12', 'up', 14);          // the trouble is on-prem
+fs.writeFileSync(path.join(DIR, 'bad-status.json'), JSON.stringify(badPing, null, 1) + '\n');
+
+const bad = JSON.parse(JSON.stringify(status));
+const m = Object.fromEntries(bad.metrics.map((x) => [x.code, x]));
+Object.assign(m.ub, { display: 'Batt 64%', value: 64 });
+Object.assign(m.ur, { display: '18m', value: 1080 });
+Object.assign(m.us, { display: 'ON BATTERY', value: 1 });
+Object.assign(m.vc, { display: 'CPU 97%', value: 97, status: 'crit' });   // consolidation storm
+Object.assign(m.wc, { display: 'CPU 88%', value: 88, status: 'warn' });
+Object.assign(m.ct, { display: '67C', value: 67 });                        // AC is off too
+Object.assign(m.mm, { display: 'Mem 71%', value: 71 });
+const iface = Object.fromEntries(bad.interfaces.map((x) => [x.code, x]));
+Object.assign(iface.XW, { inBps: 88000000, outBps: 21000000 });    // HQ users are gone
+Object.assign(iface.XC, { inBps: 310000000, outBps: 84000000 });   // cloud back to normal
+fs.writeFileSync(path.join(DIR, 'bad-snmp-status.json'), JSON.stringify(bad, null, 1) + '\n');
+
 console.log('fixtures rebuilt: board devices', board.devices.length,
-    '| metrics', status.metrics.length, '| interfaces', status.interfaces.length);
+    '| metrics', status.metrics.length, '| interfaces', status.interfaces.length,
+    '| bad-day feeds written');

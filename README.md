@@ -13,8 +13,13 @@ What you're looking at:
 - The **suite docs** (Overview / Quickstart / The apps) are the real in-app
   documentation, byte-identical to what ships.
 - The **PingCanvas kiosk** tile opens the real kiosk rendering a mock fleet:
-  32 monitored devices, a down printer, two degraded app VMs - exactly what a
-  live wall looks like, minus the poller.
+  33 monitored devices, a down printer, two degraded app VMs, a rack UPS and
+  live metric readouts - exactly what a live wall looks like, minus the
+  poller. The **"2 AM version"** link (bottom-right of the launcher) is the
+  same board during an incident - a power event in Building A: UPS on
+  battery and draining, wall-powered gear dark, the server room warming,
+  HQ traffic collapsed - told entirely through a different pair of feed
+  files. Same diagram, different night.
 - The **CrossCanvas** tile opens the editor's own live demo (it has run on
   GitHub Pages for a while - fully functional, entirely in-browser).
 - SNMPCanvas / SyslogCanvas / AlertCanvas tiles link to their repos for now;

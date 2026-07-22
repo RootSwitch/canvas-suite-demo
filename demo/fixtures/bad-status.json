@@ -1,0 +1,138 @@
+{
+ "generated": "2099-01-01T00:00:00Z",
+ "pollIntervalSec": 30,
+ "devices": {
+  "10.20.0.10": {
+   "state": "up",
+   "latencyMs": 1
+  },
+  "10.20.0.11": {
+   "state": "up",
+   "latencyMs": 12
+  },
+  "10.20.0.12": {
+   "state": "up",
+   "latencyMs": 14
+  },
+  "10.20.0.13": {
+   "state": "up",
+   "latencyMs": 22
+  },
+  "10.20.0.14": {
+   "state": "up",
+   "latencyMs": 29
+  },
+  "10.20.0.15": {
+   "state": "up",
+   "latencyMs": 36
+  },
+  "10.20.0.16": {
+   "state": "up",
+   "latencyMs": 5
+  },
+  "10.20.0.17": {
+   "state": "up",
+   "latencyMs": 12
+  },
+  "10.20.0.18": {
+   "state": "degraded",
+   "latencyMs": 210
+  },
+  "10.20.0.19": {
+   "state": "up",
+   "latencyMs": 26
+  },
+  "10.20.0.20": {
+   "state": "up",
+   "latencyMs": 33
+  },
+  "10.20.0.21": {
+   "state": "up",
+   "latencyMs": 2
+  },
+  "10.20.0.22": {
+   "state": "up",
+   "latencyMs": 9
+  },
+  "10.20.0.23": {
+   "state": "up",
+   "latencyMs": 16
+  },
+  "10.20.0.24": {
+   "state": "up",
+   "latencyMs": 23
+  },
+  "10.20.0.25": {
+   "state": "up",
+   "latencyMs": 30
+  },
+  "10.20.0.26": {
+   "state": "up",
+   "latencyMs": 37
+  },
+  "10.20.0.27": {
+   "state": "down",
+   "latencyMs": null
+  },
+  "10.20.0.28": {
+   "state": "down",
+   "latencyMs": null
+  },
+  "10.20.0.29": {
+   "state": "up",
+   "latencyMs": 20
+  },
+  "10.20.0.41": {
+   "state": "up",
+   "latencyMs": 27
+  },
+  "10.20.0.31": {
+   "state": "up",
+   "latencyMs": 34
+  },
+  "10.20.0.32": {
+   "state": "down",
+   "latencyMs": null
+  },
+  "10.20.0.33": {
+   "state": "up",
+   "latencyMs": 10
+  },
+  "10.20.0.40": {
+   "state": "up",
+   "latencyMs": 17
+  },
+  "10.20.0.35": {
+   "state": "up",
+   "latencyMs": 24
+  },
+  "10.20.0.36": {
+   "state": "up",
+   "latencyMs": 31
+  },
+  "10.20.0.37": {
+   "state": "up",
+   "latencyMs": 38
+  },
+  "10.20.0.38": {
+   "state": "up",
+   "latencyMs": 7
+  },
+  "10.20.0.39": {
+   "state": "up",
+   "latencyMs": 14
+  },
+  "10.20.0.42": {
+   "state": "up",
+   "latencyMs": 21
+  },
+  "10.20.0.43": {
+   "state": "up",
+   "latencyMs": 28
+  },
+  "10.20.0.44": {
+   "state": "up",
+   "latencyMs": 2
+  }
+ }
+}
