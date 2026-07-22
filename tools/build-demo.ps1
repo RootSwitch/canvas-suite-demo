@@ -52,7 +52,8 @@ Get-ChildItem $pcKiosk -File | Where-Object { $_.Name -notin @('web.config', 'RE
 # ----- fixtures -> kiosk/data ------------------------------------------------
 Write-Host '==> Placing fixtures'
 New-Item -ItemType Directory -Force (Join-Path $dest 'data') | Out-Null
-Copy-Item (Join-Path $Root 'demo\fixtures\board.xcanvas') (Join-Path $dest 'data\board.xcanvas') -Force
-Copy-Item (Join-Path $Root 'demo\fixtures\status.json')   (Join-Path $dest 'data\status.json') -Force
+Copy-Item (Join-Path $Root 'demo\fixtures\board.xcanvas')     (Join-Path $dest 'data\board.xcanvas') -Force
+Copy-Item (Join-Path $Root 'demo\fixtures\status.json')       (Join-Path $dest 'data\status.json') -Force
+Copy-Item (Join-Path $Root 'demo\fixtures\snmp-status.json')  (Join-Path $dest 'data\snmp-status.json') -Force
 
 Write-Host '==> Done. Serve the repo root to preview; push to deploy Pages.'
