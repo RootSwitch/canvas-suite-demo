@@ -1,0 +1,54 @@
+# Canvas Suite Demo - the static showroom
+
+> Click around the [Canvas suite](https://github.com/RootSwitch/LaunchCanvas)
+> without installing anything. Nothing here is monitoring anything: it is the
+> real apps' frontends served statically, answered by canned fixtures.
+
+**Live at: https://rootswitch.github.io/canvas-suite-demo/**
+
+What you're looking at:
+
+- The **LaunchCanvas launcher** is the front page - the real portal UI with a
+  demo shim standing in for its API (you are pre-logged-in as `demo`).
+- The **suite docs** (Overview / Quickstart / The apps) are the real in-app
+  documentation, byte-identical to what ships.
+- The **PingCanvas kiosk** tile opens the real kiosk rendering a mock fleet:
+  32 monitored devices, a down printer, two degraded app VMs - exactly what a
+  live wall looks like, minus the poller.
+- The **CrossCanvas** tile opens the editor's own live demo (it has run on
+  GitHub Pages for a while - fully functional, entirely in-browser).
+- SNMPCanvas / SyslogCanvas / AlertCanvas tiles link to their repos for now;
+  shimmed demo UIs for them are the planned next step.
+
+## How this repo works
+
+Everything outside `demo/` and `tools/` is **generated** - vendored copies of
+the real apps' frontends, refreshed by `tools/build-demo.ps1` from sibling
+checkouts. Do not hand-edit vendored files; changes belong in the app repos
+(where real users get them too) and flow here on the next build.
+
+Hand-edited files:
+
+| Path | What it is |
+|---|---|
+| `demo/demo-api.js` | the fetch shim: canned `/api/*` answers + the demo ribbon |
+| `demo/fixtures/` | the mock board (`board.xcanvas`) and status feed (`status.json`) |
+| `README.md` | this file |
+
+The `generated` timestamp in `status.json` is deliberately far-future so the
+kiosk's staleness banner never fires and the ticker reads fresh - it is a
+frozen exhibit, not a lie about uptime (see the ribbon).
+
+## Editing the docs or the look
+
+The docs pages and all styling live in the app repos (mostly
+[LaunchCanvas](https://github.com/RootSwitch/LaunchCanvas)'s `public/`), not
+here. Edit there - the GitHub web editor works fine, no Docker or Node
+needed - and this demo picks the changes up on its next build. If you want to
+*preview* a change quickly, editing the vendored copy here does render, but
+the change must land in the app repo or the next build will erase it.
+
+## License
+
+[The Unlicense](https://github.com/RootSwitch/LaunchCanvas/blob/main/LICENSE) -
+public domain, same as every app it showcases.
