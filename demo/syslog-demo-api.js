@@ -67,12 +67,22 @@
             if (kv) return { type: kv[1].toLowerCase(), v: kv[2].toLowerCase(), neg };
             const sv = raw.match(/^sev:(<=|>=|=)?(\d)$/i);
             if (sv) return { type: 'sev', op: sv[1] || '=', v: +sv[2], neg };
+            const fv = raw.match(/^fac:(\d+)$/i);
+            if (fv) return { type: 'fac', v: +fv[1], neg };
+            const tv = raw.match(/^(after|before):(.+)$/i);
+            if (tv) {
+                const t = /^\d+$/.test(tv[2]) ? +tv[2] : Math.floor(Date.parse(tv[2]) / 1000);
+                if (Number.isFinite(t)) return { type: tv[1].toLowerCase(), v: t, neg };
+            }
             return { type: 'text', v: raw.toLowerCase(), neg };
         });
     }
     const matches = (r, toks) => toks.every((t) => {
         let hit;
         if (t.type === 'sev') hit = t.op === '<=' ? r.severity <= t.v : t.op === '>=' ? r.severity >= t.v : r.severity === t.v;
+        else if (t.type === 'fac') hit = r.facility === t.v;
+        else if (t.type === 'after') hit = r.ts >= t.v;
+        else if (t.type === 'before') hit = r.ts <= t.v;
         else if (t.type === 'text') hit = (r.msg + ' ' + r.host + ' ' + r.app).toLowerCase().includes(t.v);
         else hit = String(t.type === 'ip' ? r.sourceIp : r[t.type]).toLowerCase().includes(t.v);
         return t.neg ? !hit : hit;
@@ -133,6 +143,32 @@
         return reply({ ok: true });
     };
 
+
+    // Downloads and exports NAVIGATE (href / location.href) and bypass the
+    // fetch shim - on Pages they would land on GitHub 404s. Capture-phase
+    // guard: block any /api/* navigation with a small toast instead.
+    let toastTimer = null;
+    function demoToast(msg) {
+        let t = document.getElementById('demo-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'demo-toast';
+            t.style.cssText = 'position:fixed;bottom:42px;right:10px;z-index:999;background:var(--se-panel,#262a33);border:1px solid var(--se-accent,#4c8bf5);color:var(--se-txt,#e6e9ef);padding:5px 12px;border-radius:6px;font-size:12px;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.display = '';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.style.display = 'none'; }, 2600);
+    }
+    document.addEventListener('click', function (ev) {
+        const el = ev.target && ev.target.closest ? ev.target.closest('a[href*=\'/api/\'], #msg-export') : null;
+        if (el) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            demoToast('static demo - downloads and exports are disabled');
+        }
+    }, true);
     window.addEventListener('DOMContentLoaded', function () {
         const r = document.createElement('div');
         r.id = 'demo-ribbon';

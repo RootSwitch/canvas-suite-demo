@@ -178,13 +178,24 @@
         }
         if (path === '/api/settings') {
             return reply({
-                statusFile: '/status/snmp-status.json', scanIntervalS: 30,
+                statusFile: '/status/snmp-status.json',
+                pingStatusFile: '/status/status-all.json', pingDegradedWarn: false,
+                scanIntervalS: 30,
                 raiseScans: 2, clearScans: 2, staleAfterS: 0, missingScansToClear: 20,
                 renotifyIntervalS: 0, retentionDays: 90,
-                emailEnabled: true, emailTo: 'noc@example.com', emailFrom: 'alerts@example.com',
-                smtpHost: 'mail.example.com', smtpPort: 587, smtpUser: 'alerts',
-                ntfyEnabled: false, ntfyServer: '', ntfyTopic: '',
+                rebootDetect: true, rebootSeverity: 'warn',
+                emailEnabled: true, smtpTo: 'noc@example.com', smtpFrom: 'alerts@example.com',
+                smtpHost: 'mail.example.com', smtpPort: 587, smtpMode: 'starttls',
+                smtpUser: 'alerts', smtpAllowSelfSigned: false,
+                ntfyEnabled: false, ntfyServer: 'https://ntfy.sh', ntfyTopic: '',
                 syslogEnabled: true, syslogHost: '10.20.0.21', syslogPort: 514,
+                syslogFacility: 16, syslogSevCrit: 2, syslogSevWarn: 4, syslogSevClear: 5,
+                tmplSubjectRaise: '[AlertCanvas] {{severity}}: {{label}}',
+                tmplBodyRaise: '{{time}}\n{{label}} is {{severity}}: {{detail}}.\n\n-- AlertCanvas',
+                tmplSubjectClear: '[AlertCanvas] cleared: {{label}}',
+                tmplBodyClear: '{{time}}\n{{label}} returned to normal after {{duration}}.{{reading}}\n\n-- AlertCanvas',
+                tmplSyslogRaise: '{{severity}} {{label}} {{detail}}',
+                tmplSyslogClear: 'clear {{label}} after {{duration}}{{reading}}',
                 thresholds: THRESHOLDS, ifRules: IF_RULES, deviceDown: {},
                 smtpPassSet: true, ntfyTokenSet: false,
                 dataDir: '/data (demo)', credentialEncryption: true
@@ -193,6 +204,32 @@
         return reply({ ok: true });
     };
 
+
+    // Downloads and exports NAVIGATE (href / location.href) and bypass the
+    // fetch shim - on Pages they would land on GitHub 404s. Capture-phase
+    // guard: block any /api/* navigation with a small toast instead.
+    let toastTimer = null;
+    function demoToast(msg) {
+        let t = document.getElementById('demo-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'demo-toast';
+            t.style.cssText = 'position:fixed;bottom:42px;right:10px;z-index:999;background:var(--se-panel,#262a33);border:1px solid var(--se-accent,#4c8bf5);color:var(--se-txt,#e6e9ef);padding:5px 12px;border-radius:6px;font-size:12px;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.display = '';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.style.display = 'none'; }, 2600);
+    }
+    document.addEventListener('click', function (ev) {
+        const el = ev.target && ev.target.closest ? ev.target.closest('a[href*=\'/api/\']') : null;
+        if (el) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            demoToast('static demo - downloads and exports are disabled');
+        }
+    }, true);
     window.addEventListener('DOMContentLoaded', function () {
         const r = document.createElement('div');
         r.id = 'demo-ribbon';

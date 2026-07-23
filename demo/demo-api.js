@@ -21,7 +21,7 @@
             url_syslogcanvas: 'syslogcanvas/',
             url_alertcanvas: 'alertcanvas/'
         },
-        '/api/users': { users: [{ username: 'demo', createdTs: 0 }] }
+        '/api/users': { users: [{ id: 1, username: 'demo', createdAt: '2026-07-20', self: true }] }
     };
 
     window.fetch = function (url, opts) {

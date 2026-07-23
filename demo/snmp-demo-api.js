@@ -178,6 +178,11 @@
         }));
         let m;
         if (path === '/api/session') { return reply({ authenticated: true, needsSetup: false }); }
+        // Probe/rediscover reach for real devices - a clean, honest failure
+        // beats the raw TypeError the {ok:true} catch-all used to cause.
+        if (path === '/api/devices/probe' || /^\/api\/devices\/\d+\/rediscover$/.test(path)) {
+            return reply({ error: 'probing live devices is disabled in this static demo' }, 502);
+        }
         if (path === '/api/devices') { return reply({ devices: DEVICES.map(listEntry) }); }
         if ((m = path.match(/^\/api\/devices\/(\d+)$/))) {
             const d = DEVICES.find((x) => x.id === +m[1]);
@@ -198,6 +203,32 @@
     };
 
     // demo marker (same look as the launcher's)
+
+    // Downloads and exports NAVIGATE (href / location.href) and bypass the
+    // fetch shim - on Pages they would land on GitHub 404s. Capture-phase
+    // guard: block any /api/* navigation with a small toast instead.
+    let toastTimer = null;
+    function demoToast(msg) {
+        let t = document.getElementById('demo-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'demo-toast';
+            t.style.cssText = 'position:fixed;bottom:42px;right:10px;z-index:999;background:var(--se-panel,#262a33);border:1px solid var(--se-accent,#4c8bf5);color:var(--se-txt,#e6e9ef);padding:5px 12px;border-radius:6px;font-size:12px;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.display = '';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.style.display = 'none'; }, 2600);
+    }
+    document.addEventListener('click', function (ev) {
+        const el = ev.target && ev.target.closest ? ev.target.closest('a[href*=\'/api/\']') : null;
+        if (el) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            demoToast('static demo - downloads and exports are disabled');
+        }
+    }, true);
     window.addEventListener('DOMContentLoaded', function () {
         const r = document.createElement('div');
         r.id = 'demo-ribbon';
