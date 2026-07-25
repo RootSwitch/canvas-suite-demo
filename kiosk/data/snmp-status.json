@@ -70,7 +70,7 @@
   {
    "code": "wc",
    "kind": "cpu",
-   "host": "web-01",
+   "host": "intranet-01",
    "display": "CPU 34%",
    "value": 34,
    "unit": "%",

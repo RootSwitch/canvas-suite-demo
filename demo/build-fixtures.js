@@ -142,7 +142,7 @@ const status = {
           inErrorsPerSec: 0, outErrorsPerSec: 0, inDiscardsPerSec: 0, outDiscardsPerSec: 0 }
     ],
     metrics: [
-        { code: 'wc', kind: 'cpu', host: 'web-01', display: 'CPU 34%', value: 34, unit: '%', status: 'ok' },
+        { code: 'wc', kind: 'cpu', host: 'intranet-01', display: 'CPU 34%', value: 34, unit: '%', status: 'ok' },
         { code: 'vc', kind: 'cpu', host: 'vhost-cluster', display: 'CPU 81%', value: 81, unit: '%', status: 'warn' },
         { code: 'vm', kind: 'mem', host: 'vhost-cluster', display: 'Mem 74%', value: 74, unit: '%' },
         { code: 'nf', kind: 'fs', host: 'nas-01', display: 'Pool 71%', value: 71, unit: '%' },
