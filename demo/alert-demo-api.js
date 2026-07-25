@@ -1,6 +1,6 @@
 'use strict';
 // DEMO SHIM for AlertCanvas - static showcase, no server. The alarm state
-// mirrors the calm-day kiosk story: the Printer is down (crit, device-down)
+// mirrors the calm-day kiosk story: prn-01 is down (crit, device-down)
 // and the virtualization cluster is running hot (warn, cpu). History carries
 // a week of cleared incidents including the power event the "2 AM version"
 // wall depicts. Timestamps are generated at request time so ages read fresh.
@@ -25,8 +25,8 @@
     // The cluster runs 74+wobble in the SNMP demo; here its threshold is a
     // demo-friendly 75 (an override) so a live warn alarm exists to look at.
     const openAlerts = () => [
-        { id: 41, key: 'device-down:Printer', state: 'active', severity: 'crit',
-          kind: 'device-down', host: 'Printer', code: null, label: 'Printer down',
+        { id: 41, key: 'device-down:prn-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'prn-01', code: null, label: 'prn-01 down',
           value: null, peakValue: null, threshold: null, unit: '',
           breachCount: 271, clearCount: 0,
           firstBreachTs: ago(8180), raisedTs: ago(8120), clearedTs: null,
@@ -51,8 +51,8 @@
           firstBreachTs: ago(3 * 86400 + 1200), raisedTs: ago(3 * 86400 + 1140),
           clearedTs: ago(3 * 86400 - 5400), ackedTs: null,
           clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
-        { id: 38, key: 'device-down:Finance WS', state: 'cleared', severity: 'crit',
-          kind: 'device-down', host: 'Finance WS', code: null, label: 'Finance WS down',
+        { id: 38, key: 'device-down:fin-ws-01', state: 'cleared', severity: 'crit',
+          kind: 'device-down', host: 'fin-ws-01', code: null, label: 'fin-ws-01 down',
           value: null, peakValue: null, threshold: null, unit: '', breachCount: 88,
           clearCount: 2, firstBreachTs: ago(3 * 86400 + 2400), raisedTs: ago(3 * 86400 + 2340),
           clearedTs: ago(3 * 86400 - 900), ackedTs: ago(3 * 86400 + 1900),
@@ -85,7 +85,7 @@
         source: rule !== undefined ? 'override' : 'default', muted: false, current
     });
     const WATCH_METRICS = [
-        met('wc', 'cpu', 'web-01', 'CPU 34%', 33.8, '%', 'ok'),
+        met('wc', 'cpu', 'intranet-01', 'CPU 34%', 33.8, '%', 'ok'),
         met('vc', 'cpu', 'vhost-cluster', 'CPU 81%', 81.4, '%', 'warn', { warn: 75, crit: 95 }),
         met('vm', 'mem', 'vhost-cluster', 'Mem 74%', 73.6, '%', 'ok'),
         met('nf', 'disk', 'nas-01', 'Pool 71%', 71.2, '%', 'ok'),
@@ -111,10 +111,10 @@
         ifWatch('XC', 'edge-fw:cloud0', 'edge-fw', 'cloud0', 'cloud VPC', 872e6, 240e6, 1e9)
     ];
     const FLEET = [
-        ['edge-fw', '10.20.0.15', 'up'], ['core-sw', '10.20.0.16', 'up'],
-        ['web-01', '10.20.0.19', 'up'], ['nas-01', '10.20.0.21', 'up'],
-        ['mon-01', '10.20.0.24', 'up'], ['vhost-cluster', '10.20.0.25', 'up'],
-        ['ups-01', '10.20.0.44', 'up'], ['Printer', '10.20.0.28', 'down']
+        ['edge-fw', '10.20.0.1', 'up'], ['core-sw', '10.20.0.2', 'up'],
+        ['intranet-01', '10.20.10.11', 'up'], ['nas-01', '10.20.10.20', 'up'],
+        ['mon-01', '10.20.10.15', 'up'], ['vhost-cluster', '10.20.10.30', 'up'],
+        ['ups-01', '10.20.10.44', 'up'], ['prn-01', '10.20.20.60', 'down']
     ];
     const WATCH_DEVICES = FLEET.map(([host, ip, status]) => ({
         host, ip, status,
@@ -148,14 +148,14 @@
                 ({ id, alertId, alertLabel, channel, event, ts, ok: true, detail: null });
             return reply({ notifications: [
                 n(120, 42, 'CPU', 'email', 'raise', ago(1490)),
-                n(119, 41, 'Printer down', 'syslog', 'raise', ago(8110)),
-                n(118, 41, 'Printer down', 'email', 'raise', ago(8112)),
+                n(119, 41, 'prn-01 down', 'syslog', 'raise', ago(8110)),
+                n(118, 41, 'prn-01 down', 'email', 'raise', ago(8112)),
                 n(117, 40, 'Output source', 'email', 'clear', ago(3 * 86400 - 8)),
-                n(116, 38, 'Finance WS down', 'email', 'clear', ago(3 * 86400 - 905)),
+                n(116, 38, 'fin-ws-01 down', 'email', 'clear', ago(3 * 86400 - 905)),
                 n(115, 40, 'Output source', 'syslog', 'raise', ago(3 * 86400 + 2395)),
                 n(114, 40, 'Output source', 'email', 'raise', ago(3 * 86400 + 2398)),
                 n(113, 39, 'Battery charge', 'email', 'raise', ago(3 * 86400 + 1135)),
-                n(112, 38, 'Finance WS down', 'email', 'raise', ago(3 * 86400 + 2335)),
+                n(112, 38, 'fin-ws-01 down', 'email', 'raise', ago(3 * 86400 + 2335)),
                 n(111, 37, 'cloud0 utilization', 'email', 'raise', ago(2 * 86400 + 7195))
             ] });
         }
@@ -188,7 +188,7 @@
                 smtpHost: 'mail.example.com', smtpPort: 587, smtpMode: 'starttls',
                 smtpUser: 'alerts', smtpAllowSelfSigned: false,
                 ntfyEnabled: false, ntfyServer: 'https://ntfy.sh', ntfyTopic: '',
-                syslogEnabled: true, syslogHost: '10.20.0.21', syslogPort: 514,
+                syslogEnabled: true, syslogHost: '10.20.10.20', syslogPort: 514,
                 syslogFacility: 16, syslogSevCrit: 2, syslogSevWarn: 4, syslogSevClear: 5,
                 tmplSubjectRaise: '[AlertCanvas] {{severity}}: {{label}}',
                 tmplBodyRaise: '{{time}}\n{{label}} is {{severity}}: {{detail}}.\n\n-- AlertCanvas',

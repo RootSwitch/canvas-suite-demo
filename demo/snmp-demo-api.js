@@ -44,8 +44,23 @@
     const FLAT = (kind, name, val, o) => ent(kind, name, Object.assign({ gen: () => [val, 0, 0, 0, 0, 0] }, o || {}));
 
     const upt = (days) => days * DAY + 14580;
+    // Addresses come from the Complex sample's estate (the board is the single
+    // source of truth): 10.20.0.x core, .10.x HQ servers, .20.x HQ users,
+    // .21.x retail branch, .22.x warehouse branch, .30.x cloud VPC. The polled
+    // set is a SUBSET on purpose - you do not SNMP-poll workstations, POS
+    // terminals or cameras - so the infrastructure is here and the endpoints
+    // are not.
     const DEVICES = [
-        { id: 1, name: 'core-sw', host: '10.20.0.16', vendorKey: 'cisco',
+        { id: 1, name: 'edge-fw', host: '10.20.0.1', vendorKey: 'generic',
+          sysDescr: 'pfSense 2.7 (FreeBSD)', uptimeSeconds: upt(142), exportUptime: true,
+          entities: [
+              IF('wan0', 1e9, 412e6, 96e6, { alias: 'fiber uplink', code: 'XW2' }),
+              IF('cloud0', 1e9, 872e6, 240e6, { alias: 'cloud VPC', code: 'XC', export: true }),
+              IF('lan0', 1e9, 340e6, 310e6, { alias: 'inside' }),
+              PCT('cpu', 'CPU', 22, 10),
+              USAGE('mem', 'Memory', 41, 6, 8 * 1024 ** 3)
+          ] },
+        { id: 2, name: 'core-sw', host: '10.20.0.2', vendorKey: 'cisco',
           sysDescr: 'Cisco IOS Software, Catalyst L3 Switch', uptimeSeconds: upt(89),
           entities: [
               IF('Gi1/0/1', 1e9, 412e6, 96e6, { alias: 'WAN uplink', code: 'XW', export: true }),
@@ -56,24 +71,32 @@
               PCT('cpu', 'CPU', 18, 9),
               FLAT('temp', 'Switch temperature', 41, { unit: 'C', code: 'ct', export: true })
           ] },
-        { id: 2, name: 'edge-fw', host: '10.20.0.15', vendorKey: 'generic',
-          sysDescr: 'pfSense 2.7 (FreeBSD)', uptimeSeconds: upt(142), exportUptime: true,
+        { id: 3, name: 'ids-01', host: '10.20.0.5', vendorKey: 'generic',
+          sysDescr: 'Suricata 7 sensor (Debian 12, net-snmp)', uptimeSeconds: upt(76),
           entities: [
-              IF('wan0', 1e9, 412e6, 96e6, { alias: 'fiber uplink', code: 'XW2' }),
-              IF('cloud0', 1e9, 872e6, 240e6, { alias: 'cloud VPC', code: 'XC', export: true }),
-              IF('lan0', 1e9, 340e6, 310e6, { alias: 'inside' }),
-              PCT('cpu', 'CPU', 22, 10),
-              USAGE('mem', 'Memory', 41, 6, 8 * 1024 ** 3)
+              PCT('cpu', 'CPU', 57, 16),
+              USAGE('mem', 'Memory', 68, 5, 32 * 1024 ** 3),
+              IF('mon0', 1e9, 640e6, 1e6, { alias: 'core SPAN' }),
+              USAGE('fs', '/var/log/suricata', 62, 1, 2 * 1024 ** 4)
           ] },
-        { id: 3, name: 'vhost-cluster', host: '10.20.0.25', vendorKey: 'generic',
-          sysDescr: 'Proxmox VE 8 (Debian GNU/Linux)', uptimeSeconds: upt(204),
+        { id: 4, name: 'wlc-01', host: '10.20.0.6', vendorKey: 'cisco',
+          sysDescr: 'Cisco Wireless LAN Controller', uptimeSeconds: upt(118),
           entities: [
-              PCT('cpu', 'CPU', 74, 14, { code: 'vc', export: true }),
-              USAGE('mem', 'Memory', 71, 5, 256 * 1024 ** 3, { code: 'vm', export: true }),
-              IF('bond0', 2e9, 610e6, 480e6, { alias: 'LACP to core' }),
-              USAGE('fs', '/var/lib/vz', 58, 1, 4 * 1024 ** 4)
+              PCT('cpu', 'CPU', 26, 8),
+              USAGE('mem', 'Memory', 44, 4, 8 * 1024 ** 3),
+              IF('Gi0/0/1', 1e9, 180e6, 210e6, { alias: 'to core' }),
+              FLAT('temp', 'Chassis temperature', 36, { unit: 'C' })
           ] },
-        { id: 4, name: 'web-01', host: '10.20.0.19', vendorKey: 'generic',
+        { id: 5, name: 'acc-sw-01', host: '10.20.0.10', vendorKey: 'cisco',
+          sysDescr: 'Cisco IOS Software, Catalyst access switch', uptimeSeconds: upt(211),
+          entities: [
+              IF('Gi1/0/1', 1e9, 96e6, 122e6, { alias: 'uplink to core' }),
+              IF('Gi1/0/8', 1e9, 18e6, 9e6, { alias: 'user ports' }),
+              IF('Gi1/0/12', 1e9, 6e6, 22e6, { alias: 'PoE cameras' }),
+              PCT('cpu', 'CPU', 12, 5),
+              FLAT('temp', 'Switch temperature', 39, { unit: 'C' })
+          ] },
+        { id: 6, name: 'intranet-01', host: '10.20.10.11', vendorKey: 'generic',
           sysDescr: 'Ubuntu 24.04 LTS (net-snmp)', uptimeSeconds: upt(38),
           entities: [
               PCT('cpu', 'CPU', 31, 12, { code: 'wc', export: true }),
@@ -81,7 +104,36 @@
               IF('ens18', 1e9, 96e6, 154e6, { alias: 'app traffic' }),
               USAGE('fs', '/', 44, 1, 512 * 1024 ** 3)
           ] },
-        { id: 5, name: 'nas-01', host: '10.20.0.21', vendorKey: 'synology',
+        { id: 7, name: 'erp-01', host: '10.20.10.12', vendorKey: 'generic',
+          sysDescr: 'Windows Server 2022 (SNMP service)', uptimeSeconds: upt(29),
+          entities: [
+              PCT('cpu', 'CPU', 48, 15),
+              USAGE('mem', 'Memory', 76, 6, 64 * 1024 ** 3),
+              IF('Ethernet0', 1e9, 210e6, 138e6, { alias: 'app + database' }),
+              USAGE('fs', 'D: (database)', 67, 1, 2 * 1024 ** 4)
+          ] },
+        { id: 8, name: 'dc-01', host: '10.20.10.13', vendorKey: 'generic',
+          sysDescr: 'Windows Server 2022 (domain controller)', uptimeSeconds: upt(96),
+          entities: [
+              PCT('cpu', 'CPU', 14, 6),
+              USAGE('mem', 'Memory', 52, 4, 16 * 1024 ** 3),
+              IF('Ethernet0', 1e9, 24e6, 31e6, { alias: 'directory + DNS' })
+          ] },
+        { id: 9, name: 'nac-01', host: '10.20.10.14', vendorKey: 'generic',
+          sysDescr: 'Rocky Linux 9 (net-snmp) - NAC appliance', uptimeSeconds: upt(53),
+          entities: [
+              PCT('cpu', 'CPU', 22, 9),
+              USAGE('mem', 'Memory', 58, 5, 32 * 1024 ** 3),
+              IF('ens192', 1e9, 12e6, 8e6, { alias: 'RADIUS' })
+          ] },
+        { id: 10, name: 'mon-01', host: '10.20.10.15', vendorKey: 'generic',
+          sysDescr: 'Debian 12 (net-snmp) - monitoring host', uptimeSeconds: upt(64),
+          entities: [
+              PCT('cpu', 'CPU', 9, 4),
+              USAGE('mem', 'Memory', 62, 4, 16 * 1024 ** 3, { code: 'mm', export: true }),
+              IF('eth0', 1e9, 8e6, 3e6, { alias: 'polling + feeds' })
+          ] },
+        { id: 11, name: 'nas-01', host: '10.20.10.20', vendorKey: 'synology',
           sysDescr: 'Synology DSM 7.2', uptimeSeconds: upt(121),
           entities: [
               PCT('cpu', 'CPU', 11, 5),
@@ -90,14 +142,15 @@
               IF('eth0', 1e9, 120e6, 260e6, { alias: 'backup target' }),
               FLAT('temp', 'System temperature', 38, { unit: 'C' })
           ] },
-        { id: 6, name: 'mon-01', host: '10.20.0.24', vendorKey: 'generic',
-          sysDescr: 'Debian 12 (net-snmp) - monitoring host', uptimeSeconds: upt(64),
+        { id: 12, name: 'vhost-cluster', host: '10.20.10.30', vendorKey: 'generic',
+          sysDescr: 'Proxmox VE 8 (Debian GNU/Linux)', uptimeSeconds: upt(204),
           entities: [
-              PCT('cpu', 'CPU', 9, 4),
-              USAGE('mem', 'Memory', 62, 4, 16 * 1024 ** 3, { code: 'mm', export: true }),
-              IF('eth0', 1e9, 8e6, 3e6, { alias: 'polling + feeds' })
+              PCT('cpu', 'CPU', 74, 14, { code: 'vc', export: true }),
+              USAGE('mem', 'Memory', 71, 5, 256 * 1024 ** 3, { code: 'vm', export: true }),
+              IF('bond0', 2e9, 610e6, 480e6, { alias: 'LACP to core' }),
+              USAGE('fs', '/var/lib/vz', 58, 1, 4 * 1024 ** 4)
           ] },
-        { id: 7, name: 'ups-01', host: '10.20.0.44', vendorKey: 'apc',
+        { id: 13, name: 'ups-01', host: '10.20.10.44', vendorKey: 'apc',
           sysDescr: 'APC Smart-UPS 2200 (AP9641)', uptimeSeconds: upt(203), exportUptime: true,
           entities: [
               FLAT('battery', 'Battery charge', 100, { unit: '%', code: 'ub', export: true }),
@@ -106,6 +159,67 @@
               FLAT('power', 'Output load', 738),
               FLAT('temp', 'Internal temperature', 24, { unit: 'C' }),
               FLAT('meter', 'Output voltage', 230, { unit: 'V' })
+          ] },
+        { id: 14, name: 'ap-hq-01', host: '10.20.20.10', vendorKey: 'generic',
+          sysDescr: 'OpenWrt 23.05 (hostapd)', uptimeSeconds: upt(47),
+          entities: [
+              PCT('cpu', 'CPU', 19, 7),
+              USAGE('mem', 'Memory', 51, 4, 512 * 1024 ** 2),
+              IF('br-lan', 1e9, 88e6, 142e6, { alias: 'HQ wireless' })
+          ] },
+        { id: 15, name: 'br1-rtr', host: '10.20.21.1', vendorKey: 'generic',
+          sysDescr: 'MikroTik RouterOS 7 - retail branch', uptimeSeconds: upt(157),
+          entities: [
+              IF('ether1', 1e9, 62e6, 28e6, { alias: 'branch uplink' }),
+              IF('ether2', 1e9, 30e6, 47e6, { alias: 'branch LAN' }),
+              PCT('cpu', 'CPU', 16, 7),
+              FLAT('temp', 'Board temperature', 43, { unit: 'C' })
+          ] },
+        { id: 16, name: 'pos-sw', host: '10.20.21.2', vendorKey: 'generic',
+          sysDescr: 'Netgear smart switch - retail floor', uptimeSeconds: upt(157),
+          entities: [
+              IF('port1', 1e9, 28e6, 60e6, { alias: 'uplink to br1-rtr' }),
+              IF('port4', 1e9, 4e6, 2e6, { alias: 'POS terminals' }),
+              PCT('cpu', 'CPU', 8, 3)
+          ] },
+        { id: 17, name: 'br2-rtr', host: '10.20.22.1', vendorKey: 'generic',
+          sysDescr: 'MikroTik RouterOS 7 - warehouse branch', uptimeSeconds: upt(88),
+          entities: [
+              // The warehouse rides a geostationary satellite: the link is slow
+              // and busy, which is what makes it the interesting branch.
+              IF('ether1', 20e6, 14e6, 5e6, { alias: 'satellite uplink' }),
+              IF('ether2', 1e9, 22e6, 34e6, { alias: 'warehouse LAN' }),
+              PCT('cpu', 'CPU', 21, 8),
+              FLAT('temp', 'Board temperature', 47, { unit: 'C' })
+          ] },
+        { id: 18, name: 'br2-sw', host: '10.20.22.2', vendorKey: 'generic',
+          sysDescr: 'Netgear smart switch - warehouse floor', uptimeSeconds: upt(88),
+          entities: [
+              IF('port1', 1e9, 34e6, 22e6, { alias: 'uplink to br2-rtr' }),
+              IF('port6', 1e9, 3e6, 1e6, { alias: 'conveyor PLC' }),
+              PCT('cpu', 'CPU', 7, 3)
+          ] },
+        { id: 19, name: 'sat-modem', host: '10.20.22.3', vendorKey: 'generic',
+          sysDescr: 'VSAT terminal (SNMP agent)', uptimeSeconds: upt(88),
+          entities: [
+              IF('sat0', 20e6, 14e6, 5e6, { alias: 'space segment' }),
+              FLAT('meter', 'Signal quality', 74, { unit: '%' }),
+              FLAT('temp', 'Outdoor unit temperature', 51, { unit: 'C' })
+          ] },
+        { id: 20, name: 'wh-ap', host: '10.20.22.10', vendorKey: 'generic',
+          sysDescr: 'OpenWrt 23.05 (hostapd) - warehouse', uptimeSeconds: upt(88),
+          entities: [
+              PCT('cpu', 'CPU', 15, 6),
+              USAGE('mem', 'Memory', 46, 4, 512 * 1024 ** 2),
+              IF('br-lan', 1e9, 18e6, 26e6, { alias: 'scanner wireless' })
+          ] },
+        { id: 21, name: 'lb-01', host: '10.20.30.10', vendorKey: 'generic',
+          sysDescr: 'HAProxy 2.9 (Debian 12) - cloud VPC', uptimeSeconds: upt(230),
+          entities: [
+              PCT('cpu', 'CPU', 28, 11),
+              USAGE('mem', 'Memory', 39, 5, 8 * 1024 ** 3),
+              IF('eth0', 1e9, 512e6, 604e6, { alias: 'front end' }),
+              IF('eth1', 1e9, 480e6, 430e6, { alias: 'to app VMs' })
           ] }
     ];
 
