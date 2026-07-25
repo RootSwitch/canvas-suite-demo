@@ -4,8 +4,12 @@ Heroes are the THEME showcase: four views of one app, each in a different
 theme, butted together with no gap. (Tiles are the opposite job - one theme,
 see tiles.py and the README.)
 
-Quadrants are shot at 2x the final quadrant box and supersampled down, so the
-text stays sharp at the size GitHub renders a README image.
+Quadrants are shot at NATIVE 1x ("scale": 1 in the shot list), not supersampled
+like the tiles are. Measured on the AlertCanvas hero: 1x is both sharper (real
+font hinting survives, a 2x downscale softens it) and 2.7x smaller on disk -
+298KB against 805KB, which matters for a file GitHub serves on every README
+view. Supersample when the image will be DISPLAYED smaller than its source, as
+tiles are; not when it is shown at 1:1 or larger.
 
 Usage: python hero.py <indir> <out.png> <tl> <tr> <bl> <br>
 """

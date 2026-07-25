@@ -1,26 +1,50 @@
 [
   {
-    "name": "q1-alarms", "url": "http://localhost:8095/alertcanvas/?demo=storm#/alarms",
-    "width": 1600, "height": 1000,
-    "storage": { "alertcanvas-theme": "slate" },
-    "script": "document.getElementById('demo-ribbon')?.remove()", "afterScriptMs": 400
+    "name": "q1-alarms",
+    "url": "http://localhost:8095/alertcanvas/?demo=storm#/alarms",
+    "width": 1600,
+    "height": 1000,
+    "scale": 1,
+    "storage": {
+      "alertcanvas-theme": "slate"
+    },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
   },
   {
-    "name": "q2-watching", "url": "http://localhost:8095/alertcanvas/?demo=storm#/watching",
-    "width": 1600, "height": 1000,
-    "storage": { "alertcanvas-theme": "parchment" },
-    "script": "document.getElementById('demo-ribbon')?.remove()", "afterScriptMs": 400
+    "name": "q2-watching",
+    "url": "http://localhost:8095/alertcanvas/?demo=storm#/watching",
+    "width": 1600,
+    "height": 1000,
+    "scale": 1,
+    "storage": {
+      "alertcanvas-theme": "parchment"
+    },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
   },
   {
-    "name": "q3-history", "url": "http://localhost:8095/alertcanvas/?demo=storm#/history",
-    "width": 1600, "height": 1000,
-    "storage": { "alertcanvas-theme": "nocturne" },
-    "script": "document.getElementById('demo-ribbon')?.remove()", "afterScriptMs": 400
+    "name": "q3-history",
+    "url": "http://localhost:8095/alertcanvas/?demo=storm#/history",
+    "width": 1600,
+    "height": 1000,
+    "scale": 1,
+    "storage": {
+      "alertcanvas-theme": "nocturne"
+    },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
   },
   {
-    "name": "q4-settings", "url": "http://localhost:8095/alertcanvas/#/settings",
-    "width": 1600, "height": 1000,
-    "storage": { "alertcanvas-theme": "sage" },
-    "script": "document.getElementById('demo-ribbon')?.remove()", "afterScriptMs": 400
+    "name": "q4-settings",
+    "url": "http://localhost:8095/alertcanvas/#/settings",
+    "width": 1600,
+    "height": 1000,
+    "scale": 1,
+    "storage": {
+      "alertcanvas-theme": "sage"
+    },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
   }
 ]
