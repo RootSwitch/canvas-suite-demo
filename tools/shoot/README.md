@@ -22,6 +22,16 @@ python tools/shoot/tiles.py out tiles
 belong in `LaunchCanvas/public/tiles/`; this repo's `tiles/` is a vendored copy
 that `build-demo.ps1` refreshes from there.
 
+For an app's hero image, shoot its four quadrants and composite them:
+
+```bash
+node tools/shoot/shoot.js tools/shoot/shots-hero-alertcanvas.json out
+python tools/shoot/hero.py out hero-quadrants.png q1-alarms q2-watching q3-history q4-settings
+```
+
+The result belongs in that app's own `docs/hero-quadrants.png`. Heroes are
+3200x2000 - four 1600x1000 quadrants butted together with no gap.
+
 ## The rules the shot list encodes
 
 - **Heroes show themes, tiles show the product.** Every tile is shot in
