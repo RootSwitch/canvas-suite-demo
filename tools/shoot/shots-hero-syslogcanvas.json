@@ -1,0 +1,34 @@
+[
+  {
+    "name": "q1-tail",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "syslogcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
+  },
+  {
+    "name": "q2-filter",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "syslogcanvas-theme": "blueprint" },
+    "script": "document.getElementById('demo-ribbon')?.remove(); (() => { const i = document.getElementById('msg-filter'); i.value = 'sev:<=4'; i.dispatchEvent(new Event('input')); })()",
+    "afterScriptMs": 2000
+  },
+  {
+    "name": "q3-trap",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "syslogcanvas-theme": "ember" },
+    "script": "document.getElementById('demo-ribbon')?.remove(); (() => { const s = document.createElement('style'); s.textContent = 'dialog[open]{position:fixed;inset:0;margin:auto;}'; document.head.appendChild(s); const r = [...document.querySelectorAll('tr.rowlink')].find(t => /snmptrap/.test(t.textContent)); if (!r) throw new Error('no trap row in the tail'); r.click(); })()",
+    "afterScriptMs": 1200
+  },
+  {
+    "name": "q4-settings",
+    "url": "http://localhost:8095/syslogcanvas/#/settings",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "syslogcanvas-theme": "canvas" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 600
+  }
+]
