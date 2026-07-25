@@ -1,6 +1,6 @@
 'use strict';
-// Regenerate the demo's SNMP layer: adds a UPS to the board, drops {code}
-// tokens onto labels/links, and writes the matching snmp-status.json.
+// Regenerate the demo's SNMP layer: drops {code} tokens onto labels/links and
+// writes the matching snmp-status.json and status.json.
 // Run after refreshing board.xcanvas from the CrossCanvas sample:
 //   node demo/build-fixtures.js
 // Idempotent: token lines are only appended once (guarded by marker).
@@ -24,28 +24,13 @@ function addLines(label, lines) {
     });
 }
 
-// --- the UPS (new device, Server VLAN 20, beside the cluster) ---------------
-if (!board.devices.some((d) => d.image === '@UPS')) {
-    board.devices.push({
-        id: 'demo-ups', templateId: 'demo-t-ups', image: '@UPS', originalImage: '@UPS',
-        x: 350, y: 970, w: 60, h: 60,
-        label: 'Rack UPS', labelPosition: 'bottom', fontSize: 14, fontColor: '#333333',
-        lineFormats: [fmt()], spans: [[run('Rack UPS')]], tintColor: null,
-        attachmentPoints: [
-            { rx: 30, ry: 0 }, { rx: 60, ry: 0 }, { rx: 60, ry: 30 }, { rx: 60, ry: 60 },
-            { rx: 30, ry: 60 }, { rx: 0, ry: 60 }, { rx: 0, ry: 30 }, { rx: 0, ry: 0 }
-        ],
-        fields: {}
-    });
-}
-// Set the addressing every run, not just on the run that creates the device.
-// The guard above is a create-once guard, so a board that already had the UPS
-// kept whatever fields it was first written with - which is how it ended up
-// carrying an address and no Hostname, invisible to the lookups below that key
-// on hostname. Idempotent means "ends in the same state", not "skipped".
-Object.assign(board.devices.find((d) => d.image === '@UPS').fields ||
-    (board.devices.find((d) => d.image === '@UPS').fields = {}),
-    { Hostname: 'ups-01', 'IP-Address': '10.20.10.44' });
+// The Rack UPS used to be injected here, because the CrossCanvas sample did not
+// have one - which meant the editor and the wall showed boards that differed by
+// a device, and meant this script owned addressing it had no business owning
+// (its create-once guard let a board keep fields from an older run, so the UPS
+// ended up with an address and no hostname, invisible to every lookup below).
+// The sample carries it now, at these same coordinates, so there is nothing to
+// add. If a board turns up without one, addLines below says so loudly.
 
 // --- tokens on labels (name lives in `display`, so tokens are bare) ---------
 addLines('Rack UPS', ['{ub} {ur}', '{us}']);
