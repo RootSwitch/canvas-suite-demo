@@ -1,0 +1,40 @@
+[
+  {
+    "name": "snmpcanvas",
+    "url": "http://localhost:8095/snmpcanvas/#/devices",
+    "storage": { "snmpcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
+  },
+  {
+    "name": "syslogcanvas",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "storage": { "syslogcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
+  },
+  {
+    "name": "crosscanvas",
+    "url": "http://localhost:3000/index.html?sample=complex&fit=1",
+    "waitMs": 3500
+  },
+  {
+    "name": "pingcanvas",
+    "url": "http://localhost:8095/kiosk/kiosk.html?board=data/board.xcanvas&status=data/status.json&snmp=data/snmp-status.json&staleMul=9999999",
+    "waitMs": 3500
+  },
+  {
+    "name": "alertcanvas",
+    "url": "http://localhost:8095/alertcanvas/#/watching",
+    "storage": { "alertcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
+  },
+  {
+    "name": "docs",
+    "url": "http://localhost:8095/quickstart.html",
+    "storage": { "alertcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 400
+  }
+]
