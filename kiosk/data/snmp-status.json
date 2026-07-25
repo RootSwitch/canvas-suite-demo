@@ -6,37 +6,37 @@
  "devices": [
   {
    "name": "edge-fw",
-   "host": "10.20.0.15",
+   "host": "10.20.0.1",
    "status": "up"
   },
   {
    "name": "core-sw",
-   "host": "10.20.0.16",
+   "host": "10.20.0.2",
    "status": "up"
   },
   {
-   "name": "web-01",
-   "host": "10.20.0.19",
+   "name": "intranet-01",
+   "host": "10.20.10.11",
    "status": "up"
   },
   {
    "name": "nas-01",
-   "host": "10.20.0.21",
+   "host": "10.20.10.20",
    "status": "up"
   },
   {
    "name": "mon-01",
-   "host": "10.20.0.24",
+   "host": "10.20.10.15",
    "status": "up"
   },
   {
    "name": "vhost-cluster",
-   "host": "10.20.0.25",
+   "host": "10.20.10.30",
    "status": "up"
   },
   {
    "name": "ups-01",
-   "host": "10.20.0.44",
+   "host": "10.20.10.44",
    "status": "up"
   }
  ],

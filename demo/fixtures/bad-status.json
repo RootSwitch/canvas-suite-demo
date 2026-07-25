@@ -1,138 +1,176 @@
 {
  "generated": "2099-01-01T00:00:00Z",
- "pollIntervalSec": 30,
+ "pollIntervalSec": 15,
  "devices": {
   "10.20.0.10": {
    "state": "up",
-   "latencyMs": 1
+   "latencyMs": 0.9,
+   "name": "acc-sw-01"
   },
-  "10.20.0.11": {
+  "10.20.20.10": {
    "state": "up",
-   "latencyMs": 12
+   "latencyMs": 6.7,
+   "name": "ap-hq-01"
   },
-  "10.20.0.12": {
+  "10.20.21.1": {
    "state": "up",
-   "latencyMs": 14
+   "latencyMs": 27,
+   "name": "br1-rtr"
   },
-  "10.20.0.13": {
+  "10.20.22.1": {
    "state": "up",
-   "latencyMs": 22
+   "latencyMs": 598,
+   "name": "br2-rtr"
   },
-  "10.20.0.14": {
+  "10.20.22.2": {
    "state": "up",
-   "latencyMs": 29
+   "latencyMs": 591,
+   "name": "br2-sw"
   },
-  "10.20.0.15": {
+  "10.20.21.80": {
    "state": "up",
-   "latencyMs": 36
+   "latencyMs": 27,
+   "name": "cam-br1-01"
   },
-  "10.20.0.16": {
+  "10.20.20.80": {
+   "state": "down",
+   "latencyMs": null,
+   "name": "cam-hq-01"
+  },
+  "10.20.0.2": {
    "state": "up",
-   "latencyMs": 5
+   "latencyMs": 1.6,
+   "name": "core-sw"
   },
-  "10.20.0.17": {
+  "10.20.10.13": {
    "state": "up",
-   "latencyMs": 12
+   "latencyMs": 1.1,
+   "name": "dc-01"
   },
-  "10.20.0.18": {
+  "10.20.0.1": {
+   "state": "up",
+   "latencyMs": 1.9,
+   "name": "edge-fw"
+  },
+  "10.20.10.12": {
+   "state": "up",
+   "latencyMs": 0.9,
+   "name": "erp-01"
+  },
+  "10.20.20.51": {
+   "state": "down",
+   "latencyMs": null,
+   "name": "fin-ws-01"
+  },
+  "10.20.0.5": {
+   "state": "up",
+   "latencyMs": 1.5,
+   "name": "ids-01"
+  },
+  "10.20.10.11": {
+   "state": "up",
+   "latencyMs": 1.7,
+   "name": "intranet-01"
+  },
+  "10.20.30.30": {
+   "state": "up",
+   "latencyMs": 11,
+   "name": "jump-01"
+  },
+  "10.20.22.60": {
+   "state": "up",
+   "latencyMs": 615,
+   "name": "label-printer"
+  },
+  "10.20.30.10": {
+   "state": "up",
+   "latencyMs": 13,
+   "name": "lb-01"
+  },
+  "10.20.20.52": {
+   "state": "up",
+   "latencyMs": 3.6,
+   "name": "lt-042"
+  },
+  "10.20.10.15": {
+   "state": "up",
+   "latencyMs": 1.2,
+   "name": "mon-01"
+  },
+  "10.20.10.14": {
+   "state": "up",
+   "latencyMs": 0.6,
+   "name": "nac-01"
+  },
+  "10.20.10.20": {
+   "state": "up",
+   "latencyMs": 0.8,
+   "name": "nas-01"
+  },
+  "10.20.30.20": {
+   "state": "up",
+   "latencyMs": 15,
+   "name": "obj-store"
+  },
+  "10.20.22.40": {
+   "state": "up",
+   "latencyMs": 581,
+   "name": "plc-conv-01"
+  },
+  "10.20.21.2": {
+   "state": "up",
+   "latencyMs": 22,
+   "name": "pos-sw"
+  },
+  "10.20.21.50": {
+   "state": "up",
+   "latencyMs": 19,
+   "name": "pos-term-01"
+  },
+  "10.20.20.60": {
+   "state": "down",
+   "latencyMs": null,
+   "name": "prn-01"
+  },
+  "10.20.22.3": {
+   "state": "up",
+   "latencyMs": 641,
+   "name": "sat-modem"
+  },
+  "10.20.10.44": {
+   "state": "up",
+   "latencyMs": 1.3,
+   "name": "ups-01"
+  },
+  "10.20.10.30": {
+   "state": "up",
+   "latencyMs": 1.6,
+   "name": "vhost-cluster"
+  },
+  "10.20.20.70": {
+   "state": "up",
+   "latencyMs": 2.9,
+   "name": "voip-118"
+  },
+  "10.20.30.11": {
+   "state": "up",
+   "latencyMs": 17,
+   "name": "web-01"
+  },
+  "10.20.30.12": {
+   "state": "up",
+   "latencyMs": 17,
+   "name": "web-02"
+  },
+  "10.20.22.10": {
+   "state": "up",
+   "latencyMs": 643,
+   "name": "wh-ap"
+  },
+  "10.20.0.6": {
    "state": "degraded",
-   "latencyMs": 210
-  },
-  "10.20.0.19": {
-   "state": "up",
-   "latencyMs": 26
-  },
-  "10.20.0.20": {
-   "state": "up",
-   "latencyMs": 33
-  },
-  "10.20.0.21": {
-   "state": "up",
-   "latencyMs": 2
-  },
-  "10.20.0.22": {
-   "state": "up",
-   "latencyMs": 9
-  },
-  "10.20.0.23": {
-   "state": "up",
-   "latencyMs": 16
-  },
-  "10.20.0.24": {
-   "state": "up",
-   "latencyMs": 23
-  },
-  "10.20.0.25": {
-   "state": "up",
-   "latencyMs": 30
-  },
-  "10.20.0.26": {
-   "state": "up",
-   "latencyMs": 37
-  },
-  "10.20.0.27": {
-   "state": "down",
-   "latencyMs": null
-  },
-  "10.20.0.28": {
-   "state": "down",
-   "latencyMs": null
-  },
-  "10.20.0.29": {
-   "state": "up",
-   "latencyMs": 20
-  },
-  "10.20.0.41": {
-   "state": "up",
-   "latencyMs": 27
-  },
-  "10.20.0.31": {
-   "state": "up",
-   "latencyMs": 34
-  },
-  "10.20.0.32": {
-   "state": "down",
-   "latencyMs": null
-  },
-  "10.20.0.33": {
-   "state": "up",
-   "latencyMs": 10
-  },
-  "10.20.0.40": {
-   "state": "up",
-   "latencyMs": 17
-  },
-  "10.20.0.35": {
-   "state": "up",
-   "latencyMs": 24
-  },
-  "10.20.0.36": {
-   "state": "up",
-   "latencyMs": 31
-  },
-  "10.20.0.37": {
-   "state": "up",
-   "latencyMs": 38
-  },
-  "10.20.0.38": {
-   "state": "up",
-   "latencyMs": 7
-  },
-  "10.20.0.39": {
-   "state": "up",
-   "latencyMs": 14
-  },
-  "10.20.0.42": {
-   "state": "up",
-   "latencyMs": 21
-  },
-  "10.20.0.43": {
-   "state": "up",
-   "latencyMs": 28
-  },
-  "10.20.0.44": {
-   "state": "up",
-   "latencyMs": 2
+   "latencyMs": 210,
+   "name": "wlc-01"
   }
  }
 }
