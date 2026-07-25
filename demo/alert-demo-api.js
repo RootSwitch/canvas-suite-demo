@@ -4,10 +4,17 @@
 // and the virtualization cluster is running hot (warn, cpu). History carries
 // a week of cleared incidents including the power event the "2 AM version"
 // wall depicts. Timestamps are generated at request time so ages read fresh.
+//
+// ?demo=storm switches to that power event happening NOW - the same incident
+// the "2 AM version" wall shows, from the alerting side. It is opt-in so the
+// demo's front door and the launcher tile stay calm; the app repo's hero image
+// uses it, because AlertCanvas is the one app whose documentation has to show
+// alarms actually firing.
 (function () {
     const realFetch = window.fetch.bind(window);
     const now = () => Math.floor(Date.now() / 1000);
     const ago = (s) => now() - s;
+    const STORM = new URLSearchParams(location.search).get('demo') === 'storm';
 
     const THRESHOLDS = {
         cpu: { warn: 85, crit: 95 }, mem: { warn: 85, crit: 95 }, disk: { warn: 85, crit: 95 },
@@ -24,7 +31,87 @@
 
     // The cluster runs 74+wobble in the SNMP demo; here its threshold is a
     // demo-friendly 75 (an override) so a live warn alarm exists to look at.
-    const openAlerts = () => [
+    // The power event, live: mains lost in Building A, so the UPS is carrying
+    // the rack while everything on wall power has dropped. Values match the
+    // "2 AM version" wall's feed (bad-snmp-status.json) so the two agree.
+    const stormAlerts = () => [
+        { id: 61, key: 'state:us', state: 'active', severity: 'crit', kind: 'state',
+          host: 'ups-01', code: 'us', label: 'Output source', value: 1, peakValue: 1,
+          threshold: 1, unit: '', breachCount: 44, clearCount: 0,
+          firstBreachTs: ago(2660), raisedTs: ago(2600), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 62, key: 'device-down:fin-ws-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'fin-ws-01', code: null, label: 'fin-ws-01 down',
+          value: null, peakValue: null, threshold: null, unit: '', breachCount: 42,
+          clearCount: 0, firstBreachTs: ago(2600), raisedTs: ago(2540), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 63, key: 'device-down:prn-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'prn-01', code: null, label: 'prn-01 down',
+          value: null, peakValue: null, threshold: null, unit: '', breachCount: 42,
+          clearCount: 0, firstBreachTs: ago(2590), raisedTs: ago(2530), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 64, key: 'device-down:cam-hq-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'cam-hq-01', code: null, label: 'cam-hq-01 down',
+          value: null, peakValue: null, threshold: null, unit: '', breachCount: 41,
+          clearCount: 0, firstBreachTs: ago(2580), raisedTs: ago(2520), clearedTs: null,
+          ackedTs: ago(1900), clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 65, key: 'cpu:vc', state: 'active', severity: 'crit',
+          kind: 'cpu', host: 'vhost-cluster', code: 'vc', label: 'CPU',
+          value: 97.2, peakValue: 98.4, threshold: 95, unit: '%',
+          breachCount: 38, clearCount: 0,
+          firstBreachTs: ago(2400), raisedTs: ago(2340), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 66, key: 'temp:ct', state: 'active', severity: 'crit', kind: 'temp',
+          host: 'core-sw', code: 'ct', label: 'Switch temperature', value: 67,
+          peakValue: 67, threshold: 55, unit: 'C', breachCount: 31, clearCount: 0,
+          firstBreachTs: ago(2100), raisedTs: ago(2040), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 67, key: 'battery:ub', state: 'active', severity: 'warn', kind: 'battery',
+          host: 'ups-01', code: 'ub', label: 'Battery charge', value: 64, peakValue: 64,
+          threshold: 50, unit: '%', breachCount: 12, clearCount: 0,
+          firstBreachTs: ago(900), raisedTs: ago(840), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
+        { id: 68, key: 'if-util:XW', state: 'active', severity: 'warn', kind: 'if-util',
+          host: 'edge-fw', code: 'XW', label: 'wan0 utilization', value: 88.4,
+          peakValue: 91.0, threshold: 80, unit: '%', breachCount: 9, clearCount: 0,
+          firstBreachTs: ago(700), raisedTs: ago(640), clearedTs: null,
+          ackedTs: null, clearReason: null, notifiedRaise: false, notifiedClear: false }
+    ];
+    // Older, unrelated incidents - the power event is not in here, it is live.
+    const stormHistory = () => [
+        { id: 60, key: 'disk:nf', state: 'cleared', severity: 'warn', kind: 'disk',
+          host: 'nas-01', code: 'nf', label: 'Pool usage', value: 84, peakValue: 88,
+          threshold: 85, unit: '%', breachCount: 26, clearCount: 2,
+          firstBreachTs: ago(2 * 86400 + 5400), raisedTs: ago(2 * 86400 + 5340),
+          clearedTs: ago(2 * 86400), ackedTs: null,
+          clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
+        { id: 59, key: 'if-util:XC', state: 'cleared', severity: 'warn', kind: 'if-util',
+          host: 'edge-fw', code: 'XC', label: 'cloud0 utilization', value: 78.2,
+          peakValue: 93.1, threshold: 80, unit: '%', breachCount: 12, clearCount: 2,
+          firstBreachTs: ago(3 * 86400 + 7300), raisedTs: ago(3 * 86400 + 7200),
+          clearedTs: ago(3 * 86400), ackedTs: null,
+          clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
+        { id: 58, key: 'mem:vm', state: 'cleared', severity: 'warn', kind: 'mem',
+          host: 'vhost-cluster', code: 'vm', label: 'Memory', value: 86, peakValue: 89,
+          threshold: 85, unit: '%', breachCount: 18, clearCount: 2,
+          firstBreachTs: ago(4 * 86400 + 3000), raisedTs: ago(4 * 86400 + 2940),
+          clearedTs: ago(4 * 86400), ackedTs: ago(4 * 86400 + 2500),
+          clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
+        { id: 57, key: 'device-down:lt-042', state: 'cleared', severity: 'crit',
+          kind: 'device-down', host: 'lt-042', code: null, label: 'lt-042 down',
+          value: null, peakValue: null, threshold: null, unit: '', breachCount: 54,
+          clearCount: 2, firstBreachTs: ago(5 * 86400 + 1800), raisedTs: ago(5 * 86400 + 1740),
+          clearedTs: ago(5 * 86400), ackedTs: null,
+          clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
+        { id: 56, key: 'temp:ct', state: 'cleared', severity: 'warn', kind: 'temp',
+          host: 'core-sw', code: 'ct', label: 'Switch temperature', value: 43,
+          peakValue: 49, threshold: 45, unit: 'C', breachCount: 30, clearCount: 2,
+          firstBreachTs: ago(6 * 86400 + 4000), raisedTs: ago(6 * 86400 + 3900),
+          clearedTs: ago(6 * 86400), ackedTs: null,
+          clearReason: 'recovered', notifiedRaise: true, notifiedClear: true }
+    ];
+
+    const calmAlerts = () => [
         { id: 41, key: 'device-down:prn-01', state: 'active', severity: 'crit',
           kind: 'device-down', host: 'prn-01', code: null, label: 'prn-01 down',
           value: null, peakValue: null, threshold: null, unit: '',
@@ -38,7 +125,7 @@
           firstBreachTs: ago(1560), raisedTs: ago(1500), clearedTs: null,
           ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false }
     ];
-    const history = () => [
+    const calmHistory = () => [
         { id: 40, key: 'state:us', state: 'cleared', severity: 'crit', kind: 'state',
           host: 'ups-01', code: 'us', label: 'Output source', value: 1, peakValue: 1,
           threshold: 1, unit: '', breachCount: 82, clearCount: 2,
@@ -69,13 +156,16 @@
           firstBreachTs: ago(5 * 86400 + 4000), raisedTs: ago(5 * 86400 + 3900),
           clearedTs: ago(5 * 86400), ackedTs: null,
           clearReason: 'recovered', notifiedRaise: true, notifiedClear: true },
-        { id: 35, key: 'device-down:POE Camera', state: 'cleared', severity: 'crit',
-          kind: 'device-down', host: 'POE Camera', code: null, label: 'POE Camera down',
+        { id: 35, key: 'device-down:cam-hq-01', state: 'cleared', severity: 'crit',
+          kind: 'device-down', host: 'cam-hq-01', code: null, label: 'cam-hq-01 down',
           value: null, peakValue: null, threshold: null, unit: '', breachCount: 85,
           clearCount: 2, firstBreachTs: ago(3 * 86400 + 2400), raisedTs: ago(3 * 86400 + 2280),
           clearedTs: ago(3 * 86400 - 1500), ackedTs: null,
           clearReason: 'recovered', notifiedRaise: true, notifiedClear: true }
     ];
+
+    const openAlerts = () => (STORM ? stormAlerts() : calmAlerts());
+    const history = () => (STORM ? stormHistory() : calmHistory());
 
     const lvl = (kind) => THRESHOLDS[kind] || null;
     const met = (code, kind, host, display, value, unit, current, rule) => ({
@@ -84,7 +174,18 @@
         rule: rule !== undefined ? rule : lvl(kind),
         source: rule !== undefined ? 'override' : 'default', muted: false, current
     });
-    const WATCH_METRICS = [
+    const WATCH_METRICS = STORM ? [
+        met('wc', 'cpu', 'intranet-01', 'CPU 38%', 37.5, '%', 'ok'),
+        met('vc', 'cpu', 'vhost-cluster', 'CPU 97%', 97.2, '%', 'crit', { warn: 75, crit: 95 }),
+        met('vm', 'mem', 'vhost-cluster', 'Mem 78%', 78.1, '%', 'ok'),
+        met('nf', 'disk', 'nas-01', 'Pool 71%', 71.2, '%', 'ok'),
+        met('ct', 'temp', 'core-sw', '67C', 67, 'C', 'crit'),
+        met('mm', 'mem', 'mon-01', 'Mem 64%', 63.9, '%', 'ok'),
+        met('ub', 'battery', 'ups-01', 'Batt 64%', 64, '%', 'warn'),
+        met('ur', 'runtime', 'ups-01', '18m', 1080, 's', 'ok'),
+        met('us', 'state', 'ups-01', 'ON BATTERY', 1, '', 'crit'),
+        met('fu', 'uptime', 'edge-fw', 'up 142d', 12268800, 's', null)
+    ] : [
         met('wc', 'cpu', 'intranet-01', 'CPU 34%', 33.8, '%', 'ok'),
         met('vc', 'cpu', 'vhost-cluster', 'CPU 81%', 81.4, '%', 'warn', { warn: 75, crit: 95 }),
         met('vm', 'mem', 'vhost-cluster', 'Mem 74%', 73.6, '%', 'ok'),
@@ -115,7 +216,10 @@
         ['intranet-01', '10.20.10.11', 'up'], ['nas-01', '10.20.10.20', 'up'],
         ['mon-01', '10.20.10.15', 'up'], ['vhost-cluster', '10.20.10.30', 'up'],
         ['ups-01', '10.20.10.44', 'up'], ['prn-01', '10.20.20.60', 'down']
-    ];
+    ].concat(STORM ? [
+        // Building A lost wall power: everything not on the UPS went with it.
+        ['fin-ws-01', '10.20.20.51', 'down'], ['cam-hq-01', '10.20.20.80', 'down']
+    ] : []);
     const WATCH_DEVICES = FLEET.map(([host, ip, status]) => ({
         host, ip, status,
         rule: { enabled: true, severity: 'crit' }, source: 'default', muted: false
@@ -137,7 +241,7 @@
                 feed: { ok: true, generatedAt: new Date((now() - 9) * 1000).toISOString(),
                         ageSec: 9, staleAfterS: 120 },
                 watching: { metrics: WATCH_METRICS.length, interfaces: WATCH_IFS.length, devices: FLEET.length },
-                counts: { pending: 0, active: 2, clearing: 0 },
+                counts: { pending: 0, active: openAlerts().length, clearing: 0 },
                 emailError: null, scanIntervalS: 30
             });
         }
@@ -146,7 +250,19 @@
         if (path === '/api/notifications') {
             const n = (id, alertId, alertLabel, channel, event, ts) =>
                 ({ id, alertId, alertLabel, channel, event, ts, ok: true, detail: null });
-            return reply({ notifications: [
+            return reply({ notifications: STORM ? [
+                n(140, 68, 'wan0 utilization', 'email', 'raise', ago(635)),
+                n(139, 67, 'Battery charge', 'email', 'raise', ago(835)),
+                n(138, 66, 'Switch temperature', 'email', 'raise', ago(2035)),
+                n(137, 65, 'CPU', 'syslog', 'raise', ago(2334)),
+                n(136, 65, 'CPU', 'email', 'raise', ago(2336)),
+                n(135, 64, 'cam-hq-01 down', 'email', 'raise', ago(2515)),
+                n(134, 63, 'prn-01 down', 'email', 'raise', ago(2525)),
+                n(133, 62, 'fin-ws-01 down', 'syslog', 'raise', ago(2534)),
+                n(132, 62, 'fin-ws-01 down', 'email', 'raise', ago(2536)),
+                n(131, 61, 'Output source', 'syslog', 'raise', ago(2595)),
+                n(130, 61, 'Output source', 'email', 'raise', ago(2597))
+            ] : [
                 n(120, 42, 'CPU', 'email', 'raise', ago(1490)),
                 n(119, 41, 'prn-01 down', 'syslog', 'raise', ago(8110)),
                 n(118, 41, 'prn-01 down', 'email', 'raise', ago(8112)),
