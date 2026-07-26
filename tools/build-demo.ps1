@@ -8,6 +8,10 @@
         README.md               this repo's own docs
 
     Run from the repo root:  powershell -File tools\build-demo.ps1
+    Verify without writing:  powershell -File tools\build-demo.ps1 -Check
+      (exits 1 and lists every vendored file that no longer matches its source.
+       Run it before any shoot and before publishing - a stale copy fails
+       nothing on its own, it just misrepresents the product.)
 #>
 [CmdletBinding()]
 param(
