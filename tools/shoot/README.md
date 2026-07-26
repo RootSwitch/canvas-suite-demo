@@ -78,3 +78,24 @@ The result belongs in that app's own `docs/hero-quadrants.png`. Heroes are
 - The kiosk needs its full query string or it shows "No Board Loaded", and
   `staleMul` matters because the fixtures are dated 2099 and read as stale
   without it.
+
+## CrossCanvas is the exception
+
+Every other app is shot against the demo on :8095. CrossCanvas is **not vendored
+into the demo**, so it is shot against its own dev server on **:3000** (the
+`network-diagram` launch config).
+
+Its hero is also a different shape: four *diagrams* rather than four views,
+because a diagram editor has no interesting second view. Two are the built-in
+samples; the other two are tracked in the **CrossCanvas repo** at `docs/hero/`,
+not here. That is forced by design, not preference - `?board=` enforces
+same-origin, so the files have to be reachable from CrossCanvas's own origin.
+Those two are stored NEUTRAL and recoloured at shoot time, so a palette change
+flows into the next shoot instead of freezing into the file.
+
+No scripting is needed for it: `theme`, `sample`, `board`, `recolor` and `fit`
+are all public URL parameters, so every quadrant is a plain URL.
+
+**Known gap:** `shots-social.json` has no PingCanvas entry, though
+`pingcanvas/docs/social-preview.png` exists - that one was shot ad hoc and never
+written down, so it is the one social that cannot currently be reproduced.

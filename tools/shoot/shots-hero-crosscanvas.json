@@ -1,0 +1,26 @@
+[
+  {
+    "name": "q1-complex-classic",
+    "url": "http://localhost:3000/index.html?sample=complex&theme=classic&fit=1",
+    "width": 1600, "height": 1000, "scale": 1,
+    "waitMs": 2600
+  },
+  {
+    "name": "q2-simple-garnet",
+    "url": "http://localhost:3000/index.html?sample=small&theme=garnet&recolor=1&fit=1",
+    "width": 1600, "height": 1000, "scale": 1,
+    "waitMs": 2600
+  },
+  {
+    "name": "q3-homelab-synthwave",
+    "url": "http://localhost:3000/index.html?board=docs/hero/homelab.xcanvas&theme=synthwave&recolor=1&fit=1",
+    "width": 1600, "height": 1000, "scale": 1,
+    "waitMs": 3000
+  },
+  {
+    "name": "q4-orderservice-ember",
+    "url": "http://localhost:3000/index.html?board=docs/hero/order-service.xcanvas&theme=ember&recolor=1&fit=1",
+    "width": 1600, "height": 1000, "scale": 1,
+    "waitMs": 3000
+  }
+]
