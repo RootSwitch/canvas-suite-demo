@@ -15,7 +15,10 @@ param(
     [string]$PingCanvas   = 'C:\Workspace\pingcanvas',
     [string]$SNMPCanvas   = 'C:\Workspace\snmpcanvas\SNMPCanvas',
     [string]$SyslogCanvas = 'C:\Workspace\syslogcanvas\syslogcanvas',
-    [string]$AlertCanvas  = 'C:\Workspace\alertcanvas'
+    [string]$AlertCanvas  = 'C:\Workspace\alertcanvas',
+    # Verify instead of vendoring: report every vendored file that no longer
+    # matches its source and exit 1. Nothing is written.
+    [switch]$Check
 )
 
 # Vendor an app's public/ into a subdir and inject its demo shim before app.js.
@@ -37,6 +40,79 @@ function Import-AppFrontend {
 }
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
+
+# --- drift check --------------------------------------------------------------
+# Everything outside demo/ and tools/ is a COPY of a sibling repo's frontend, and
+# nothing fails when a copy goes stale - it just quietly misrepresents the
+# product until somebody stares at a screenshot. That is exactly how the demo
+# came to be advertising a feature (95th-percentile chart lines) that had been
+# REMOVED from SNMPCanvas upstream: it survived a whole imagery pass and was
+# caught only because it turned up in a hero shot.
+#
+# -Check turns that silent rot into an exit code. Run it before any shoot and
+# before publishing.
+#
+# The wrinkle: vendored index.html files are DELIBERATELY modified - the demo
+# shim is injected ahead of app.js - so a raw hash compare would flag the very
+# files that matter most, every time. Strip the injected line before comparing,
+# and a genuine edit to index.html still shows up.
+function Get-Normalized {
+    param([string]$Path)
+    $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($Path))
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    $text = [regex]::Replace($text, '(?m)^[ \t]*<script src="[^"]*demo[-/][^"]*\.js"></script>\r?\n', '')
+    $text = $text -replace "`r`n", "`n"
+    return $text
+}
+
+function Test-Vendored {
+    param([string]$SrcDir, [string]$DestDir, [string[]]$Only = @(), [string[]]$Skip = @())
+    if (-not (Test-Path $SrcDir))  { return @("source missing: $SrcDir") }
+    if (-not (Test-Path $DestDir)) { return @("never vendored: $DestDir") }
+    $problems = @()
+    foreach ($f in (Get-ChildItem $SrcDir -Recurse -File)) {
+        $rel = $f.FullName.Substring($SrcDir.Length).TrimStart('\')
+        if ($Skip -contains $f.Name) { continue }
+        if ($Only.Count -gt 0) {
+            $match = $false
+            foreach ($pat in $Only) { if ($rel -like $pat) { $match = $true; break } }
+            if (-not $match) { continue }
+        }
+        $mirror = Join-Path $DestDir $rel
+        if (-not (Test-Path $mirror)) { $problems += "MISSING  $rel"; continue }
+        if ((Get-Normalized $f.FullName) -ne (Get-Normalized $mirror)) { $problems += "STALE    $rel" }
+    }
+    return $problems
+}
+
+if ($Check) {
+    Write-Host '==> Checking vendored copies against their sources'
+    $all = @()
+    # The same mapping the vendoring below uses, kept adjacent on purpose: if one
+    # moves, the other is in view.
+    foreach ($x in (Test-Vendored (Join-Path $LaunchCanvas 'public') $Root -Only @('*.html','*.js','*.css','favicon.svg','icons\*','tiles\*'))) {
+        $all += ('{0,-13} {1}' -f 'launchcanvas', $x)
+    }
+    foreach ($x in (Test-Vendored (Join-Path $PingCanvas 'kiosk') (Join-Path $Root 'kiosk') -Skip @('web.config','README.md'))) {
+        $all += ('{0,-13} {1}' -f 'pingcanvas', $x)
+    }
+    foreach ($a in @(
+        @{ n = 'snmpcanvas';   p = (Join-Path $SNMPCanvas   'public') },
+        @{ n = 'syslogcanvas'; p = (Join-Path $SyslogCanvas 'public') },
+        @{ n = 'alertcanvas';  p = (Join-Path $AlertCanvas  'public') })) {
+        foreach ($x in (Test-Vendored $a.p (Join-Path $Root $a.n))) { $all += ('{0,-13} {1}' -f $a.n, $x) }
+    }
+    if ($all.Count -gt 0) {
+        Write-Host ''
+        foreach ($line in $all) { Write-Host "  $line" }
+        Write-Host ''
+        Write-Host "$($all.Count) vendored file(s) out of date. Re-run without -Check to refresh." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host '  ok every vendored file matches its source'
+    exit 0
+}
+
 
 # ----- LaunchCanvas frontend -> repo root (the launcher IS the demo's home) --
 Write-Host '==> Vendoring LaunchCanvas public/'

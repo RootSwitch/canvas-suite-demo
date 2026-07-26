@@ -99,3 +99,19 @@ are all public URL parameters, so every quadrant is a plain URL.
 **Known gap:** `shots-social.json` has no PingCanvas entry, though
 `pingcanvas/docs/social-preview.png` exists - that one was shot ad hoc and never
 written down, so it is the one social that cannot currently be reproduced.
+
+## Before any shoot: check for drift
+
+```
+powershell -File toolsuild-demo.ps1 -Check
+```
+
+Exits 1 and lists every vendored file that no longer matches its source. This
+exists because the demo's vendored frontends went stale silently and it was
+caught only by accident - a hero shot showed SNMPCanvas drawing 95th-percentile
+lines, a feature that had been REMOVED upstream. Everything shot before that
+discovery had to be redone.
+
+A clean check is not a promise about the future: it says the copies match *right
+now*. Sources can move between the check and the shot, which is how the
+CrossCanvas tile once shipped a 36-device board next to PingCanvas's 37.
