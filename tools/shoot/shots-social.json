@@ -1,0 +1,34 @@
+[
+  {
+    "name": "launchcanvas",
+    "url": "http://localhost:8095/index.html",
+    "width": 1280, "height": 640, "scale": 1,
+    "storage": { "alertcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 700
+  },
+  {
+    "name": "snmpcanvas",
+    "url": "http://localhost:8095/snmpcanvas/#/devices",
+    "width": 1280, "height": 640, "scale": 1,
+    "storage": { "snmpcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 500
+  },
+  {
+    "name": "syslogcanvas",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "width": 1280, "height": 640, "scale": 1,
+    "storage": { "syslogcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 500
+  },
+  {
+    "name": "alertcanvas",
+    "url": "http://localhost:8095/alertcanvas/?demo=storm#/alarms",
+    "width": 1280, "height": 640, "scale": 1,
+    "storage": { "alertcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 500
+  }
+]
