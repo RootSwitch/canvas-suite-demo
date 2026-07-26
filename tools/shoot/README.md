@@ -32,6 +32,24 @@ python tools/shoot/hero.py out hero-quadrants.png q1-alarms q2-watching q3-histo
 The result belongs in that app's own `docs/hero-quadrants.png`. Heroes are
 3200x2000 - four 1600x1000 quadrants butted together with no gap.
 
+### The two shot lists that need more than this repo
+
+- **LaunchCanvas** shows its login page and its multi-user Settings, and this
+  demo auto-authenticates, so there is no login page here to shoot. Run the
+  real thing on 9170 first, seeded and with SSO on so Settings shows the
+  feature active rather than "Off":
+
+  ```bash
+  LAUNCHCANVAS_DATA=/tmp/lc-shoot ADMIN_PASSWORD=shootrig-throwaway \
+    SUITE_SECRET=shootrig-throwaway-suite-secret PORT=9170 node server/server.js
+  ```
+
+  The password is in the shot list on purpose: it is a throwaway for a scratch
+  data dir that exists for one shoot and is deleted after. Do not point this at
+  a real instance.
+- **SNMPCanvas** needs `?demo=discover` for its add-device quadrant, which the
+  shim answers with one canned probe. Everything else comes from here.
+
 ## The rules the shot list encodes
 
 - **Heroes show themes, tiles show the product.** Every tile is shot in

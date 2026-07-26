@@ -1,0 +1,33 @@
+[
+  {
+    "name": "q1-launcher",
+    "url": "http://localhost:8095/index.html",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "alertcanvas-theme": "slate" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 700
+  },
+  {
+    "name": "q2-quickstart",
+    "url": "http://localhost:8095/quickstart.html",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "alertcanvas-theme": "parchment" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 500
+  },
+  {
+    "name": "q3-login",
+    "url": "http://localhost:9170/",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "alertcanvas-theme": "nocturne" },
+    "afterScriptMs": 500
+  },
+  {
+    "name": "q4-settings",
+    "url": "http://localhost:9170/",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "alertcanvas-theme": "sage" },
+    "script": "(async () => { await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'shootrig-throwaway' }) }); location.hash = '#/settings'; location.reload(); })()",
+    "afterScriptMs": 3000
+  }
+]
