@@ -1,6 +1,6 @@
 'use strict';
 // DEMO SHIM for AlertCanvas - static showcase, no server. The alarm state
-// mirrors the calm-day kiosk story: prn-01 is down (crit, device-down)
+// mirrors the calm-day kiosk story: dc-01 is down (crit, device-down)
 // and the virtualization cluster is running hot (warn, cpu). History carries
 // a week of cleared incidents including the power event the "2 AM version"
 // wall depicts. Timestamps are generated at request time so ages read fresh.
@@ -45,8 +45,8 @@
           value: null, peakValue: null, threshold: null, unit: '', breachCount: 42,
           clearCount: 0, firstBreachTs: ago(2600), raisedTs: ago(2540), clearedTs: null,
           ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
-        { id: 63, key: 'device-down:prn-01', state: 'active', severity: 'crit',
-          kind: 'device-down', host: 'prn-01', code: null, label: 'prn-01 down',
+        { id: 63, key: 'device-down:dc-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'dc-01', code: null, label: 'dc-01 down',
           value: null, peakValue: null, threshold: null, unit: '', breachCount: 42,
           clearCount: 0, firstBreachTs: ago(2590), raisedTs: ago(2530), clearedTs: null,
           ackedTs: null, clearReason: null, notifiedRaise: true, notifiedClear: false },
@@ -112,8 +112,8 @@
     ];
 
     const calmAlerts = () => [
-        { id: 41, key: 'device-down:prn-01', state: 'active', severity: 'crit',
-          kind: 'device-down', host: 'prn-01', code: null, label: 'prn-01 down',
+        { id: 41, key: 'device-down:dc-01', state: 'active', severity: 'crit',
+          kind: 'device-down', host: 'dc-01', code: null, label: 'dc-01 down',
           value: null, peakValue: null, threshold: null, unit: '',
           breachCount: 271, clearCount: 0,
           firstBreachTs: ago(8180), raisedTs: ago(8120), clearedTs: null,
@@ -215,7 +215,7 @@
         ['edge-fw', '10.20.0.1', 'up'], ['core-sw', '10.20.0.2', 'up'],
         ['intranet-01', '10.20.10.11', 'up'], ['nas-01', '10.20.10.20', 'up'],
         ['mon-01', '10.20.10.15', 'up'], ['vhost-cluster', '10.20.10.30', 'up'],
-        ['ups-01', '10.20.10.44', 'up'], ['prn-01', '10.20.20.60', 'down']
+        ['ups-01', '10.20.10.44', 'up'], ['dc-01', '10.20.10.13', 'down']
     ].concat(STORM ? [
         // Building A lost wall power: everything not on the UPS went with it.
         ['fin-ws-01', '10.20.20.51', 'down'], ['cam-hq-01', '10.20.20.80', 'down']
@@ -257,15 +257,15 @@
                 n(137, 65, 'CPU', 'syslog', 'raise', ago(2334)),
                 n(136, 65, 'CPU', 'email', 'raise', ago(2336)),
                 n(135, 64, 'cam-hq-01 down', 'email', 'raise', ago(2515)),
-                n(134, 63, 'prn-01 down', 'email', 'raise', ago(2525)),
+                n(134, 63, 'dc-01 down', 'email', 'raise', ago(2525)),
                 n(133, 62, 'fin-ws-01 down', 'syslog', 'raise', ago(2534)),
                 n(132, 62, 'fin-ws-01 down', 'email', 'raise', ago(2536)),
                 n(131, 61, 'Output source', 'syslog', 'raise', ago(2595)),
                 n(130, 61, 'Output source', 'email', 'raise', ago(2597))
             ] : [
                 n(120, 42, 'CPU', 'email', 'raise', ago(1490)),
-                n(119, 41, 'prn-01 down', 'syslog', 'raise', ago(8110)),
-                n(118, 41, 'prn-01 down', 'email', 'raise', ago(8112)),
+                n(119, 41, 'dc-01 down', 'syslog', 'raise', ago(8110)),
+                n(118, 41, 'dc-01 down', 'email', 'raise', ago(8112)),
                 n(117, 40, 'Output source', 'email', 'clear', ago(3 * 86400 - 8)),
                 n(116, 38, 'fin-ws-01 down', 'email', 'clear', ago(3 * 86400 - 905)),
                 n(115, 40, 'Output source', 'syslog', 'raise', ago(3 * 86400 + 2395)),

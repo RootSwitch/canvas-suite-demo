@@ -156,9 +156,10 @@ Object.keys(byHost).sort().forEach((h) => {
     ping.devices[ip] = { state: 'up', latencyMs: latencyFor(ip), name: h };
 });
 // One red dot on an otherwise healthy wall. A board where everything is green
-// demonstrates nothing, and a printer somebody switched off at the wall is the
-// most ordinary outage there is.
-ping.devices[ipOf('prn-01')] = { state: 'down', latencyMs: null, name: 'prn-01' };
+// demonstrates nothing, and a server that has stopped answering is the outage
+// people actually care about - it also sits inside two nested zones, so the
+// wall shows the alarm propagating out through both rings.
+ping.devices[ipOf('dc-01')] = { state: 'down', latencyMs: null, name: 'dc-01' };
 fs.writeFileSync(path.join(DIR, 'status.json'), JSON.stringify(ping, null, 1) + '\n');
 
 // --- the 2 AM version: same board, same codes, a power event in Building A --
@@ -171,8 +172,8 @@ const setState = (host, state, lat) => {
     badPing.devices[ipOf(host)] = { state, latencyMs: lat, name: host };
 };
 setState('fin-ws-01', 'down', null);       // wall power, nothing behind it
-setState('prn-01', 'down', null);          // already the down one
 setState('cam-hq-01', 'down', null);       // unbacked PoE leg
+// dc-01 is already down from the calm feed above and stays down here.
 setState('wlc-01', 'degraded', 210);       // controller struggling on the brownout
 // Branches and cloud are deliberately left alone: the blast radius is Building
 // A and nowhere else, which is the thing a wall should make obvious at a glance.

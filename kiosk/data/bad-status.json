@@ -43,8 +43,8 @@
    "name": "core-sw"
   },
   "10.20.10.13": {
-   "state": "up",
-   "latencyMs": 1.1,
+   "state": "down",
+   "latencyMs": null,
    "name": "dc-01"
   },
   "10.20.0.1": {
@@ -128,9 +128,9 @@
    "name": "pos-term-01"
   },
   "10.20.20.60": {
-   "state": "down",
-   "latencyMs": null,
-   "name": "prn-01"
+   "state": "up",
+   "latencyMs": 2.9,
+   "name": "prnt-01"
   },
   "10.20.22.3": {
    "state": "up",
