@@ -70,10 +70,20 @@
         var ifaces = (doc && doc.interfaces) || [];
         for (i = 0; i < ifaces.length; i++) {
             var it = ifaces[i];
+            // Schema v4 made `device` the device NAME and dropped `id` (which
+            // was always device + ':' + name, restating two neighbouring
+            // fields). v3 sent a {name,host,status} object plus an explicit id.
+            // Accept BOTH: the suite's apps update independently, so a kiosk
+            // can meet either version of SNMPCanvas and neither upgrade order
+            // should blank a wall.
+            var devName = (typeof it.device === 'string') ? it.device
+                        : (it.device && it.device.name) || '';
+            var ifId = (it.id != null && it.id !== '') ? it.id
+                     : (devName && it.name ? devName + ':' + it.name : '');
             var disp = (it.display != null && it.display !== '') ? it.display
                      : ('▼' + fmtBps(it.inBps) + '  ▲' + fmtBps(it.outBps));
             var e = { display: disp, iface: it };
-            if (it.id != null && it.id !== '') { idx[it.id] = e; }   // '' would catch a "{ }" token
+            if (ifId) { idx[ifId] = e; }                            // '' would catch a "{ }" token
             if (it.code != null && it.code !== '') { idx[it.code] = e; }
             // Also match "Device:alias" (the friendly interface name, e.g.
             // "EdgeSw-01:Uplink-1"). The exporter's `id` is "Device:ifName"
@@ -81,8 +91,8 @@
             // annotation written against the readable alias never binds - the
             // exact drift the samples used to hide. `id` still wins on a clash
             // (registered first, not overwritten).
-            if (it.alias && it.device && it.device.name) {
-                var aliasKey = it.device.name + ':' + it.alias;
+            if (it.alias && devName) {
+                var aliasKey = devName + ':' + it.alias;
                 if (idx[aliasKey] === undefined) { idx[aliasKey] = e; }
             }
         }
@@ -149,10 +159,42 @@
     }
 
     // --- link annotations (unchanged binding scan) ---
+    // Diagonal hatch used to mark a degraded link's pill. It has to be an SVG
+    // <pattern> - CSS background images do not apply to SVG shapes - and it is
+    // defined once, lazily, inside the overlay we own. Deliberately a FILL
+    // change rather than an extra line of text: a board dense enough to be
+    // worth watching has no spare room, and a pill that grows downward when
+    // something breaks will cover the label beneath it on exactly the boards
+    // where that matters most. Same footprint, colour-independent signal.
+    function ensureHatch() {
+        if (!overlay || document.getElementById('pc-degraded-hatch')) { return; }
+        var defs = document.createElementNS(SVGNS, 'defs');
+        var pat = document.createElementNS(SVGNS, 'pattern');
+        pat.setAttribute('id', 'pc-degraded-hatch');
+        pat.setAttribute('patternUnits', 'userSpaceOnUse');
+        pat.setAttribute('width', '7');
+        pat.setAttribute('height', '7');
+        pat.setAttribute('patternTransform', 'rotate(45)');
+        var bg = document.createElementNS(SVGNS, 'rect');
+        bg.setAttribute('width', '7');
+        bg.setAttribute('height', '7');
+        bg.setAttribute('fill', 'rgba(20, 24, 30, 0.85)');   // matches .snmp-pill-bg
+        var stripe = document.createElementNS(SVGNS, 'line');
+        stripe.setAttribute('x1', '0'); stripe.setAttribute('y1', '0');
+        stripe.setAttribute('x2', '0'); stripe.setAttribute('y2', '7');
+        stripe.setAttribute('stroke', '#d9a406');            // STATE_COLORS.degraded
+        stripe.setAttribute('stroke-width', '3');
+        pat.appendChild(bg);
+        pat.appendChild(stripe);
+        defs.appendChild(pat);
+        overlay.appendChild(defs);
+    }
+
     function scanAnnotations() {
         var svg = global.CrossCanvas.svg();
         overlay = document.getElementById('status-overlay');
         if (!svg || !overlay) { return; }
+        ensureHatch();
         var seen = {};
         var texts = svg.querySelectorAll('text.connection-annotation');
         for (var i = 0; i < texts.length; i++) {
@@ -361,13 +403,14 @@
             }
             b.matched = true;
             var f = e.iface;
+            var linkState = 'ok';
             if (f) {
                 var down = f.operStatus === 'down';
                 var unknown = f.operStatus === 'unknown' || f.operStatus == null;
                 var noData = f.inBps == null && f.outBps == null;
-                if (down) { paintLink(b, COLORS.down, true, false); }
-                else if (unknown || noData) { paintLink(b, COLORS.unknown, false, true); }
-                else if (isDegraded(f)) { paintLink(b, COLORS.degraded, false, false); }
+                if (down) { linkState = 'down'; paintLink(b, COLORS.down, true, false); }
+                else if (unknown || noData) { linkState = 'unknown'; paintLink(b, COLORS.unknown, false, true); }
+                else if (isDegraded(f)) { linkState = 'degraded'; paintLink(b, COLORS.degraded, false, false); }
                 else { paintLink(b, b.origStroke, false, false); }
             } else {
                 paintLink(b, b.origStroke, false, false);   // a metric pinned to a link: show value, don't recolor
@@ -381,6 +424,11 @@
             b.pill.text.textContent = b.template ? replaceTokens(b.template, idx) : e.display;
             b.pill.g.style.display = '';
             b.pill.g.classList.toggle('stale', !!meta.stale);
+            // Degraded links hatch their pill (kiosk.css). Colour already said
+            // this, but only to people who can tell amber from green - the same
+            // gap the device rings had. The hatch changes no geometry, so it is
+            // safe on a board too tight to grow anything.
+            b.pill.g.classList.toggle('degraded', linkState === 'degraded');
             sizePill(b.pill);
         });
 

@@ -226,6 +226,30 @@
     const allEnts = {};
     DEVICES.forEach((d) => d.entities.forEach((e) => { e.deviceId = d.id; allEnts[e.id] = e; }));
 
+    // The one device the wizard "finds": web-01, a cloud App VM that is on the
+    // board but not yet in the polled set above - which is exactly the device
+    // you would be adding next.
+    const DISCOVER = new URLSearchParams(location.search).get('demo') === 'discover';
+    const inv = (kind, snmpIndex, name, o) => Object.assign(
+        { kind, snmpIndex, name, alias: '', tracked: kind !== 'if' || snmpIndex === '2',
+          speedBps: null, operStatus: null, extra: null }, o || {});
+    const probeResult = () => ({
+        probeToken: 'demo-probe-token',
+        vendorKey: 'generic',
+        warnings: [],
+        system: { sysName: 'web-01',
+                  sysDescr: 'Linux web-01 6.8.0-41-generic #41-Ubuntu SMP x86_64' },
+        entities: [
+            inv('if', '1', 'lo', { speedBps: 10e6, operStatus: 1, tracked: false }),
+            inv('if', '2', 'ens18', { alias: 'app traffic', speedBps: 1e9, operStatus: 1 }),
+            inv('if', '3', 'ens19', { alias: 'backup vlan', speedBps: 1e9, operStatus: 2, tracked: false }),
+            inv('cpu', '0', 'CPU (2 cores)'),
+            inv('mem', '1', 'Physical memory'),
+            inv('fs', '2', '/'),
+            inv('fs', '3', '/var/log')
+        ]
+    });
+
     const latestOf = (e) => {
         const t = now();
         const v = e.gen(t);
@@ -295,6 +319,11 @@
         // Probe/rediscover reach for real devices - a clean, honest failure
         // beats the raw TypeError the {ok:true} catch-all used to cause.
         if (path === '/api/devices/probe' || /^\/api\/devices\/\d+\/rediscover$/.test(path)) {
+            // ?demo=discover answers one canned probe instead, for the app
+            // repo's hero image: the add-device wizard is the first thing a new
+            // user meets and a 502 makes a poor screenshot. Opt-in, so the
+            // honest failure above stays what the live demo actually does.
+            if (DISCOVER) { return reply(probeResult()); }
             return reply({ error: 'probing live devices is disabled in this static demo' }, 502);
         }
         if (path === '/api/devices') { return reply({ devices: DEVICES.map(listEntry) }); }

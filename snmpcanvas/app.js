@@ -142,7 +142,7 @@
         setAutoRefresh(null);
         ifFilter = ''; // filter is per-visit; auto-refresh re-renders keep it, navigation clears it
         const session = await GET('/api/session');
-        if (!session.authenticated) { renderLogin(session.needsSetup); return; }
+        if (!session.authenticated) { renderLogin(session.needsSetup, session.sso); return; }
 
         const hash = location.hash || '#/devices';
         let m;
@@ -153,7 +153,13 @@
     }
 
     // ===== login / first-run =====
-    function renderLogin(needsSetup) {
+    function renderLogin(needsSetup, sso) {
+        // A fresh sub-app in an SSO suite must NOT offer its claim form to an
+        // anonymous visitor (an authenticated admin never reaches this page -
+        // their token logs them straight in). Point them at the portal instead;
+        // the backend refuses the claim regardless (defense in depth).
+        const locked = needsSetup && sso;
+        const portalUrl = location.protocol + '//' + location.hostname + ':9160/';
         setNav(null, false);
         setAutoRefresh(null);
         $main.innerHTML = `
@@ -164,15 +170,22 @@
                 <rect x="9" y="12" width="46" height="34" rx="3" fill="#f4f1ea" stroke-width="4"/>
                 <polyline points="13.5,30 20,30 23,25.5 26,30 31,30 34,18 38,40.5 41,30 44.5,27 47.5,30 50.5,30" stroke="var(--se-logo-b)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
             </svg> SNMPCanvas</h1>
+            ${locked ? `
+            <div class="sub">This instance is part of a single sign-on suite.</div>
+            <p class="muted" style="text-align:center;line-height:1.5;margin-top:4px">
+                Sign in through <a href="${portalUrl}">LaunchCanvas</a> and open this app
+                from there. It has no login of its own until an administrator sets a
+                fallback password from Settings.</p>` : `
             <div class="sub">${needsSetup ? 'First run - choose an admin password (8+ characters).' : 'Enter the password to continue.'}</div>
             <form id="login-form">
                 <input type="password" id="pw" placeholder="Password" autofocus autocomplete="${needsSetup ? 'new-password' : 'current-password'}">
                 ${needsSetup ? '<input type="password" id="pw2" placeholder="Confirm password" autocomplete="new-password">' : ''}
                 <button class="btn-primary" type="submit">${needsSetup ? 'Set password' : 'Log in'}</button>
                 <div class="error-text" id="login-err" style="margin-top:8px"></div>
-            </form>
+            </form>`}
         </div></div>`;
-        document.getElementById('login-form').addEventListener('submit', async (ev) => {
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) loginForm.addEventListener('submit', async (ev) => {
             ev.preventDefault();
             const pw = document.getElementById('pw').value;
             const err = document.getElementById('login-err');
@@ -340,7 +353,11 @@
         default sensor selection - open any device afterward to fine-tune what is tracked.</p>
         <form id="bulk-form">
         <div class="form-grid">
-            <label>Addresses</label><textarea id="f-hosts" rows="6" placeholder="192.0.2.10&#10;switch-a.lan&#10;192.0.2.20" required></textarea>
+            <label>Addresses</label>
+            <span><textarea id="f-hosts" rows="6" style="width:100%" placeholder="192.0.2.10&#10;switch-a.lan&#10;192.0.2.20" required></textarea>
+                <input type="file" id="f-hostfile" accept=".xcanvas,.netdraw,.csv,.txt,application/json,text/csv" style="display:none">
+                <button type="button" id="f-fromfile" title="Pull addresses out of a CrossCanvas board (.xcanvas) or a CSV with an IP-Address column - e.g. the board a setup-script --scan seeded">From file…</button>
+                <span class="muted small" id="f-fromfile-msg"></span></span>
             <label>Port</label><input type="number" id="f-port" value="161" min="1" max="65535">
             ${credFieldsHtml()}
         </div>
@@ -356,6 +373,86 @@
         wireCredToggle();
         document.getElementById('back-btn').addEventListener('click', addDeviceWizard);
         document.getElementById('close-btn').addEventListener('click', () => { $modal.close(); route(); });
+
+        // "From file": extract addresses from a CrossCanvas board or a CSV, so
+        // a --scan-seeded board feeds bulk add without a spreadsheet detour.
+        // Order of preference: board devices' IP-Address fields; a CSV column
+        // whose header says IP; else any IPv4-shaped tokens in the text.
+        // Quote-aware CSV field split - a naive split(',') shears a quoted
+        // label like "Switch, Core" into two fields and shifts every column
+        // after it, so the "IP" column yields fragments of the label instead.
+        const splitCsvLine = (line) => {
+            const fields = [];
+            let cur = '', inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (inQ) {
+                    if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+                    else cur += ch;
+                } else if (ch === '"') inQ = true;
+                else if (ch === ',') { fields.push(cur); cur = ''; }
+                else cur += ch;
+            }
+            fields.push(cur);
+            return fields.map((f) => f.trim());
+        };
+        // Plausible probe target: an IPv4/IPv6/hostname-shaped token. Filters
+        // the placeholder junk real exports carry before it becomes a doomed
+        // probe in the results table - but nothing more. Requiring a dot or
+        // colon here (the first cut at this) threw away valid short names like
+        // "core-sw" that the textarea beside it accepts by hand, and several
+        // IPv6 forms besides. Only known placeholders are refused now; a
+        // wrong-but-host-shaped entry is visible and skippable in the results.
+        const ADDRESS_JUNK = new Set(['n/a', 'na', 'none', 'null', 'nil', 'unknown',
+            'tbd', 'dhcp', 'unassigned', '-', '--']);
+        const plausibleAddress = (v) => {
+            if (!v || v.length > 253 || ADDRESS_JUNK.has(v.toLowerCase())) return false;
+            return v.includes(':')
+                ? /^[0-9A-Fa-f:.]+(%[A-Za-z0-9_-]+)?$/.test(v)          // IPv6, optionally zoned
+                : /^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9.])?$/.test(v); // IPv4 / host / FQDN
+        };
+        const extractAddresses = (name, text) => {
+            const out = [];
+            const seen = new Set();
+            const push = (v) => {
+                v = String(v || '').trim();
+                if (v && plausibleAddress(v) && !seen.has(v)) { seen.add(v); out.push(v); }
+            };
+            try {
+                const doc = JSON.parse(text);
+                (doc.devices || []).forEach((d) => push(d.fields && d.fields['IP-Address']));
+                if (out.length) return out;
+            } catch (_) { /* not JSON - fall through to CSV/text */ }
+            const lines = text.split(/\r?\n/);
+            const header = splitCsvLine(lines[0] || '').map((h) => h.replace(/^["']|["']$/g, '').toLowerCase());
+            const ipCol = header.findIndex((h) => h === 'ip-address' || h === 'ip address' || h === 'ip' || h === 'ipv4 address' || h === 'ipv4');
+            if (ipCol >= 0) {
+                lines.slice(1).forEach((l) => push(splitCsvLine(l)[ipCol]));
+                if (out.length) return out;
+            }
+            const IPV4 = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g;
+            (text.match(IPV4) || []).forEach(push);
+            return out;
+        };
+        const hostFile = document.getElementById('f-hostfile');
+        document.getElementById('f-fromfile').addEventListener('click', () => hostFile.click());
+        hostFile.addEventListener('change', () => {
+            const f = hostFile.files[0];
+            if (!f) return;
+            const fmsg = document.getElementById('f-fromfile-msg');
+            const reader = new FileReader();
+            reader.onload = () => {
+                const found = extractAddresses(f.name, String(reader.result || ''));
+                if (!found.length) { fmsg.textContent = `no addresses found in ${f.name}`; return; }
+                const box = document.getElementById('f-hosts');
+                const have = new Set(box.value.split(/[\s,]+/).map((h) => h.trim()).filter(Boolean));
+                const fresh = found.filter((a) => !have.has(a));
+                box.value = [...have, ...fresh].join('\n');
+                fmsg.textContent = `${fresh.length} address${fresh.length === 1 ? '' : 'es'} from ${f.name}${found.length > fresh.length ? ` (${found.length - fresh.length} already listed)` : ''}`;
+                hostFile.value = '';
+            };
+            reader.readAsText(f);
+        });
 
         document.getElementById('bulk-form').addEventListener('submit', async (ev) => {
             ev.preventDefault();
@@ -823,6 +920,9 @@
         <h2>Edit ${esc(d.name)}</h2>
         <div class="form-grid">
             <label>Name</label><input type="text" id="e-name" value="${esc(d.name)}">
+            <label>Address</label>
+            <span><input type="text" id="e-host" value="${esc(d.host)}" style="width:180px">
+                : <input type="number" id="e-port" min="1" max="65535" style="width:80px" value="${d.port}"></span>
             <label>Polling interval</label>
             <span><input type="number" id="e-interval" min="30" style="width:110px" value="${d.pollIntervalS || ''}" placeholder="global"> seconds (blank = global ${d.effectiveIntervalS}s)</span>
             <label>Polling</label>
@@ -837,7 +937,9 @@
             <summary>Change credentials (${esc(d.snmpVersion)})</summary>
             <div class="section-note">Leave blank to keep the stored credentials. Enter new ones to rotate
                 them - e.g. changing a community off <code>public</code> - which also encrypts them at rest
-                when SNMPCANVAS_SECRET is set. The interface codes are unchanged, so any board keeps working.</div>
+                when SNMPCANVAS_SECRET is set. The interface codes are unchanged, so any board keeps working.
+                <strong>Changing the Address requires re-entering them</strong> - stored credentials are never
+                sent to a new host.</div>
             <div class="form-grid">${credFieldsHtml()}</div>
         </details>
         <div class="form-actions">
@@ -857,11 +959,18 @@
         document.getElementById('f-community').placeholder = 'unchanged';
         wireCredToggle();
         document.getElementById('f-version').dispatchEvent(new Event('change'));
+        // Typing a new address opens the credentials section: the server refuses
+        // a host change without them, so surface that before the Save, not after.
+        document.getElementById('e-host').addEventListener('input', (ev) => {
+            if (ev.target.value.trim() !== d.host) $modal.querySelector('.cred-edit').open = true;
+        });
         document.getElementById('e-cancel').addEventListener('click', () => $modal.close());
         document.getElementById('e-save').addEventListener('click', async () => {
             try {
                 const patch = {
                     name: document.getElementById('e-name').value,
+                    host: document.getElementById('e-host').value,
+                    port: document.getElementById('e-port').value,
                     pollIntervalS: document.getElementById('e-interval').value || null,
                     enabled: document.getElementById('e-enabled').checked,
                     exportUptime: document.getElementById('e-uptime').checked,
@@ -942,10 +1051,6 @@
             chartBlock(wrap, 'Traffic', {
                 ...opts, unit: 'bps',
                 yMax: scaleToLink && data.speedBps > 0 ? data.speedBps : undefined,
-                hlines: data.p95 ? [
-                    { value: data.p95.in, cls: 'a', label: '95th in' },
-                    { value: data.p95.out, cls: 'b', label: '95th out' }
-                ] : [],
                 series: [
                     { label: 'In (avg)', cls: 'a', area: true, data: pts.map((p) => [p[0], p[1]]) },
                     { label: 'In (max)', cls: 'c', data: pts.map((p) => [p[0], p[2]]) },
@@ -1069,7 +1174,27 @@
                 <span><input type="number" id="s-interval" value="${s.pollIntervalS}" min="30" style="width:110px"> seconds</span>
                 <label>History retention</label>
                 <span><input type="number" id="s-retention" value="${s.retentionDays}" min="1" style="width:110px"> days (pruned nightly at 03:30)</span>
+                <label>Poll concurrency</label>
+                <span><input type="number" id="s-concurrency" value="${s.pollConcurrency}" min="1" max="512" style="width:110px"
+                    ${s.poller && s.poller.concurrencySource === 'env' ? 'disabled' : ''}> devices polled at once
+                    <span class="muted small">(${s.poller ? s.poller.inFlight : 0} in flight now)</span></span>
             </div>
+            <div class="muted small" style="margin-top:8px">
+                A slot is one outstanding SNMP request, not a worker - it spends its time waiting for a
+                reply, so raising this costs very little and is the usual fix when the loop falls behind.
+                Slow devices (PDUs, BMCs) need more of them than fast switches do. At most half are ever
+                given to devices already marked down, so unreachable kit cannot starve the rest.
+            </div>
+            ${s.poller && s.poller.concurrencySource === 'env' ? `<div class="muted small" style="margin-top:6px">
+                This field is read-only because <code>POLL_CONCURRENCY=${s.poller.concurrency}</code> is set in
+                this container's environment, which takes precedence. Change it there (in your
+                <code>docker-compose.yml</code> under <code>environment:</code>, then <code>docker compose up -d</code>),
+                or remove it to manage the value here.</div>` : ''}
+            ${s.poller && s.poller.behind ? `<div class="warn-text small" style="margin-top:10px">
+                The poll loop is behind: ${s.poller.overdueDevices} device${s.poller.overdueDevices === 1 ? '' : 's'}
+                ${s.poller.overdueDevices === 1 ? 'has' : 'have'} missed a full interval, worst is
+                ${s.poller.worstLateS}s overdue. History is being recorded at a longer interval than the one set here.
+                Raise poll concurrency above (currently ${s.poller.concurrency}), lengthen the interval, or split the fleet.</div>` : ''}
         </div>
         <div class="panel">
             <h2>Interface export</h2>
@@ -1124,10 +1249,15 @@
         document.getElementById('s-save').addEventListener('click', async () => {
             const msg = document.getElementById('s-msg');
             try {
+                const conc = document.getElementById('s-concurrency');
                 await api('PATCH', '/api/settings', {
                     pollIntervalS: parseInt(document.getElementById('s-interval').value, 10),
                     retentionDays: parseInt(document.getElementById('s-retention').value, 10),
-                    exportPath: document.getElementById('s-export').value
+                    exportPath: document.getElementById('s-export').value,
+                    // Omitted when the environment owns it: sending a value the
+                    // server must refuse would fail the whole save over a field
+                    // the operator cannot even edit.
+                    ...(conc && !conc.disabled ? { pollConcurrency: parseInt(conc.value, 10) } : {})
                 });
                 msg.className = 'ok-text'; msg.textContent = 'Saved.';
             } catch (e) { msg.className = 'error-text'; msg.textContent = e.message; }

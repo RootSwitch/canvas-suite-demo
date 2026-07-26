@@ -8,6 +8,10 @@
     const $logout = document.getElementById('logout-btn');
 
     let refreshTimer = null;
+    // Last mute/unmute failure, kept outside renderWatching because that click
+    // handler finishes by re-rendering - a message written into the old DOM
+    // would be thrown away before anyone could read it.
+    let muteError = null;
 
     // ===== helpers =====
     function esc(s) {
@@ -197,7 +201,7 @@
             setTimeout(route, 5000); // self-heal once the server is back
             return;
         }
-        if (!session.authenticated) { renderLogin(session.needsSetup); return; }
+        if (!session.authenticated) { renderLogin(session.needsSetup, session.sso); return; }
 
         const hash = location.hash || '#/alarms';
         if (hash.startsWith('#/watching')) return renderWatching();
@@ -207,7 +211,13 @@
     }
 
     // ===== login / first-run =====
-    function renderLogin(needsSetup) {
+    function renderLogin(needsSetup, sso) {
+        // A fresh sub-app in an SSO suite must NOT offer its claim form to an
+        // anonymous visitor (an authenticated admin never reaches this page -
+        // their token logs them straight in). Point them at the portal instead;
+        // the backend refuses the claim regardless (defense in depth).
+        const locked = needsSetup && sso;
+        const portalUrl = location.protocol + '//' + location.hostname + ':9160/';
         setNav(null, false);
         setAutoRefresh(null);
         $main.innerHTML = `
@@ -218,15 +228,22 @@
                 <rect x="9" y="12" width="46" height="34" rx="3" fill="#f4f1ea" stroke-width="4"/>
                 <g fill="var(--se-down)" stroke="none"><rect x="28.5" y="17" width="7" height="16.5" rx="3.5"/><circle cx="32" cy="40.5" r="3.6"/></g>
             </svg> AlertCanvas</h1>
+            ${locked ? `
+            <div class="sub">This instance is part of a single sign-on suite.</div>
+            <p class="muted" style="text-align:center;line-height:1.5;margin-top:4px">
+                Sign in through <a href="${portalUrl}">LaunchCanvas</a> and open this app
+                from there. It has no login of its own until an administrator sets a
+                fallback password from Settings.</p>` : `
             <div class="sub">${needsSetup ? 'First run - choose an admin password (8+ characters).' : 'Enter the password to continue.'}</div>
             <form id="login-form">
                 <input type="password" id="pw" placeholder="Password" autofocus autocomplete="${needsSetup ? 'new-password' : 'current-password'}">
                 ${needsSetup ? '<input type="password" id="pw2" placeholder="Confirm password" autocomplete="new-password">' : ''}
                 <button class="btn-primary" type="submit">${needsSetup ? 'Set password' : 'Log in'}</button>
                 <div class="error-text" id="login-err" style="margin-top:8px"></div>
-            </form>
+            </form>`}
         </div></div>`;
-        document.getElementById('login-form').addEventListener('submit', async (ev) => {
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) loginForm.addEventListener('submit', async (ev) => {
             ev.preventDefault();
             const pw = document.getElementById('pw').value;
             const err = document.getElementById('login-err');
@@ -418,6 +435,64 @@
         }
         if (!onWatchingView()) return; // user navigated away mid-fetch
 
+        // One-click mute, right where the noise is noticed - the counterpart
+        // of the ping opt-in checkboxes below. Mute creates disabled overrides
+        // (visible under Settings > Overrides, note "muted from Watching");
+        // Unmute deletes only rows this flow itself created (identified by
+        // the note) and re-enables anything else, so a hand-made override -
+        // custom threshold, escalated severity, an operator's note - survives
+        // a mute cycle. A target muted by a HOST-WIDE (host-kind) override is
+        // outside this button's per-target jurisdiction: unmuting it here
+        // would silently unmute every sibling on the host, so the button
+        // renders disabled and points at Settings instead.
+        const muteBtn = (code, kinds, muted, hostMuted) => hostMuted ? `
+            <button disabled title="Muted by a host-wide override - manage it under Settings > Overrides">Unmute</button>` : `
+            <button data-mute="${esc(code)}" data-kinds="${kinds}" data-unmute="${muted ? 1 : 0}"
+                title="${muted ? 'Resume alerting on this target'
+                    : 'Stop alerting on this target - adds muted overrides you can manage under Settings'}">
+                ${muted ? 'Unmute' : 'Mute'}</button>`;
+        const wireMutes = () => {
+            $main.querySelectorAll('button[data-mute]').forEach((btn) => btn.addEventListener('click', async () => {
+                const code = btn.dataset.mute;
+                const unmute = btn.dataset.unmute === '1';
+                btn.disabled = true;
+                muteError = null;
+                try {
+                    const { overrides } = await GET('/api/overrides');
+                    for (const kind of btn.dataset.kinds.split(',')) {
+                        const row = overrides.find((o) => o.scope === 'code' && o.code === code && o.kind === kind);
+                        if (!unmute) {
+                            if (!row) await api('POST', '/api/overrides', { scope: 'code', code, kind, enabled: false, note: 'muted from Watching' });
+                            else if (row.enabled) await api('PATCH', `/api/overrides/${row.id}`, { enabled: false });
+                        } else if (row && !row.enabled) {
+                            // Delete ONLY what the mute flow itself created (its
+                            // note is the marker). Judging by fields instead got
+                            // this wrong once: an if-down override escalating a
+                            // warn default to crit has no levels and the default
+                            // severity, yet deleting it would erase the operator's
+                            // escalation. Re-enable is always the safe direction.
+                            const pureMute = row.warn == null && row.crit == null &&
+                                row.note === 'muted from Watching';
+                            if (pureMute) await api('DELETE', `/api/overrides/${row.id}`);
+                            else await api('PATCH', `/api/overrides/${row.id}`, { enabled: true });
+                        }
+                    }
+                } catch (e) {
+                    // Some failures are permanent for a target - a kind the
+                    // server does not accept, a feed value with no code - so
+                    // swallowing them left a button that visibly did nothing,
+                    // forever. The message rides muteError through the
+                    // re-render and stays up until the next mute attempt.
+                    muteError = `${unmute ? 'Unmute' : 'Mute'} failed: ${e.message}`;
+                }
+                renderWatching();
+            }));
+        };
+        // Shown in both tables that carry mute buttons: the operator who
+        // clicked one at the bottom of a long interface list must not have to
+        // scroll back up to find out why nothing happened.
+        const muteMsg = () => (muteError ? `<div class="error-text">${esc(muteError)}</div>` : '');
+
         // Ping panel: the PingCanvas feed's roster with per-device opt-in.
         // Built once, shown whether or not the SNMP feed is up - a ping-only
         // deployment is legitimate.
@@ -493,6 +568,7 @@
                 <td class="hide-sm">${esc(m.kind)}</td>
                 <td>${ruleText(m.rule, m.unit, m.lowerIsBad, m.source, m.muted)}</td>
                 <td>${stateBadge(m.current, m.muted)}</td>
+                <td>${muteBtn(m.code, m.kind, m.muted, m.muted && m.source === 'host override')}</td>
             </tr>`).join('');
 
         const ifRows = w.interfaces
@@ -502,6 +578,22 @@
                 const link = i.down.muted ? '<span class="muted small">muted</span>'
                     : !i.down.rule ? '<span class="muted small">off</span>'
                     : `${esc(i.down.rule.severity)}${i.down.source !== 'default' ? ` <span class="muted small">(${esc(i.down.source)})</span>` : ''}`;
+                // Worst of the four aspects; "muted" only when EVERY
+                // aspect is muted - one muted rule must not hide a live
+                // warn on another.
+                const aspects = [i.errors, i.discards, i.util];
+                const worst = i.down.current === 'alarm' || aspects.some((a) => a.current === 'crit') ? 'crit'
+                    : aspects.some((a) => a.current === 'warn') ? 'warn'
+                    : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
+                    : null;
+                const allMuted = i.down.muted && aspects.every((a) => a.muted);
+                // Fully muted with ANY of those mutes coming from a host-kind
+                // override: Unmute can only undo the code-scope half, so it
+                // would delete those rows, leave the row muted by the host
+                // rule, and flip the button back to Mute - a lie. A mixed
+                // mute belongs under Settings like a pure host one does.
+                const hostMuted = allMuted && [i.down, ...aspects]
+                    .some((x) => x.muted && x.source === 'host override');
                 return `
             <tr>
                 <td>${esc(i.host)}</td>
@@ -510,18 +602,8 @@
                 ${aspectCell(i.errors, 'pps')}
                 ${aspectCell(i.discards, 'pps')}
                 ${aspectCell(i.util, '%')}
-                <td>${(() => {
-                    // Worst of the four aspects; "muted" only when EVERY
-                    // aspect is muted - one muted rule must not hide a live
-                    // warn on another.
-                    const aspects = [i.errors, i.discards, i.util];
-                    const worst = i.down.current === 'alarm' || aspects.some((a) => a.current === 'crit') ? 'crit'
-                        : aspects.some((a) => a.current === 'warn') ? 'warn'
-                        : aspects.some((a) => a.current === 'ok') || i.down.current === 'ok' ? 'ok'
-                        : null;
-                    const allMuted = i.down.muted && aspects.every((a) => a.muted);
-                    return stateBadge(worst, allMuted);
-                })()}</td>
+                <td>${stateBadge(worst, allMuted)}</td>
+                <td>${muteBtn(i.code, 'if-down,if-errors,if-discards,if-util', allMuted, hostMuted)}</td>
             </tr>`;
             }).join('');
 
@@ -544,23 +626,26 @@
         </div>
         <div class="panel">
             <h2>Host metrics</h2>
+            ${muteMsg()}
             ${w.metrics.length === 0 ? '<div class="muted">The feed carries no metrics.</div>' : `
             <table class="list">
-                <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th></tr></thead>
+                <thead><tr><th>Host</th><th>Value</th><th class="hide-sm">Kind</th><th>Effective rule</th><th>State</th><th></th></tr></thead>
                 <tbody>${metricRows}</tbody>
             </table>`}
         </div>
         <div class="panel">
             <h2>Interfaces</h2>
             <div class="section-note">${devSummary}. Stale-feed watchdog raises after ${status.feed && status.feed.staleAfterS ? status.feed.staleAfterS + 's' : 'the configured window'} without a fresh feed. Warn / crit cells; hover for the current reading.</div>
+            ${muteMsg()}
             ${w.interfaces.length === 0 ? '<div class="muted">The feed carries no interfaces.</div>' : `
             <table class="list">
-                <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th></tr></thead>
+                <thead><tr><th>Device</th><th>Interface</th><th>Link</th><th class="num">Errors</th><th class="num">Discards</th><th class="num">Util</th><th>State</th><th></th></tr></thead>
                 <tbody>${ifRows}</tbody>
             </table>`}
         </div>
         ${pingPanel}`;
         wirePing();
+        wireMutes();
         setAutoRefresh(renderWatching, 30000);
     }
 
@@ -770,7 +855,10 @@
 
         <div class="panel">
             <h2>Overrides</h2>
-            <div class="section-note">Per-target exceptions to the defaults above: a different limit for one sensor, or a mute for a noisy port.</div>
+            <div class="section-note">Per-target exceptions to the defaults above: a different limit for one sensor, or a mute for a noisy port.
+                Threshold rules take warn/crit limits; link down and device down are on/off rules with no
+                thresholds - their override only picks the severity the alarm raises as. Untick On to mute a
+                target outright (the Mute buttons on Watching manage the same rows).</div>
             ${overrides.length === 0 ? '' : `
             <table class="list">
                 <thead><tr><th>Target</th><th>Kind</th><th class="num">Warn</th><th class="num">Crit / severity</th><th>On</th><th>Note</th><th></th></tr></thead>
@@ -785,7 +873,8 @@
                 <span id="ov-extra"></span>
                 <input type="number" step="any" id="ov-warn" placeholder="warn" style="width:80px;display:none">
                 <input type="number" step="any" id="ov-crit" placeholder="crit" style="width:80px;display:none">
-                <select id="ov-sev" style="display:none"><option value="crit">crit</option><option value="warn">warn</option></select>
+                <select id="ov-sev" style="display:none" title="On/off rule - no threshold; this is the severity the alarm raises as">
+                    <option value="crit">raise as crit</option><option value="warn">raise as warn</option></select>
                 <input type="text" id="ov-note" placeholder="note" style="width:140px;display:none">
                 <button class="btn-primary" id="ov-add" style="display:none">Add</button>
                 <span id="ov-msg"></span>
@@ -802,8 +891,8 @@
                     <option value="starttls" ${s.smtpMode === 'starttls' ? 'selected' : ''}>STARTTLS (587)</option>
                     <option value="tls" ${s.smtpMode === 'tls' ? 'selected' : ''}>Implicit TLS (465)</option>
                     <option value="none" ${s.smtpMode === 'none' ? 'selected' : ''}>None (25)</option></select>
-                <label>Username</label><input type="text" id="set-smtpUser" value="${esc(s.smtpUser)}" autocomplete="off">
-                <label>Password</label><input type="password" id="set-smtpPass" placeholder="${s.smtpPassSet ? '(saved - leave blank to keep)' : ''}" autocomplete="new-password">
+                <label title="Optional - leave blank for an unauthenticated relay. Independent of Security: TLS relays can still require login, port-25 relays often need none.">Username</label><input type="text" id="set-smtpUser" value="${esc(s.smtpUser)}" placeholder="blank = no authentication" autocomplete="off">
+                <label title="Only needed when the relay requires login.">Password</label><input type="password" id="set-smtpPass" placeholder="${s.smtpPassSet ? '(saved - leave blank to keep)' : ''}" autocomplete="new-password">
                 <label>Allow self-signed</label><span><input type="checkbox" id="set-smtpAllowSelfSigned" ${s.smtpAllowSelfSigned ? 'checked' : ''}></span>
                 <label>From</label><input type="text" id="set-smtpFrom" value="${esc(s.smtpFrom)}" placeholder="alertcanvas@example.com">
                 <label>To</label><input type="text" id="set-smtpTo" value="${esc(s.smtpTo)}" placeholder="you@example.com, oncall@example.com">

@@ -17,13 +17,28 @@
     'use strict';
 
     var params = new URLSearchParams(location.search);
-    var boardUrl = params.get('board') || 'board.xcanvas';
-    // Legacy default: an un-parameterized kiosk whose data folder still holds
-    // a pre-rename board.netdraw falls back to it (an explicit ?board= is
-    // never second-guessed).
-    var legacyBoardUrl = params.get('board') ? null : 'board.netdraw';
-    var statusUrl = params.get('status') || 'status.json';
-    var snmpUrl = params.get('snmp');                 // absent => the SNMP layer stays inert
+    var explicitBoard = params.get('board');
+    var explicitStatus = params.get('status');
+    var explicitSnmp = params.get('snmp');
+    var boardUrl = explicitBoard || 'board.xcanvas';
+    // An un-parameterized kiosk searches the layouts this app actually ships
+    // in, in order:
+    //   board.xcanvas       standalone - the board sits beside kiosk.html
+    //   data/board.xcanvas  suite install - nginx serves the shared data root
+    //                       at /data/, and both the setup script and the
+    //                       LaunchCanvas tile put boards there
+    //   board.netdraw       pre-rename standalone data folders
+    // Without the middle one, typing a bare kiosk.html on a suite install
+    // showed the starter board's "place a board here" guidance while a real
+    // board sat one directory away - accurate from the file's point of view,
+    // and thoroughly confusing from the operator's. An explicit ?board= is
+    // still never second-guessed.
+    var boardFallbacks = explicitBoard ? [] : ['data/board.xcanvas', 'board.netdraw'];
+    var statusUrl = explicitStatus || 'status.json';
+    var snmpUrl = explicitSnmp;                       // may be derived once the board is found
+
+    // 'data/board.xcanvas' -> 'data/'   |   'board.xcanvas' -> ''
+    function dirOf(u) { var i = String(u).lastIndexOf('/'); return i < 0 ? '' : String(u).slice(0, i + 1); }
     // Numeric params are parsed defensively: a wall URL is typed by hand, often
     // once, and then runs for months. A junk value must degrade to the default,
     // never to NaN - `?margin=abc` used to reach fitToView(NaN) and render the
@@ -43,6 +58,7 @@
     var snmpInterval = numParam('snmpInterval', null, 1);
     var interval = numParam('interval', null, 1);
     var staleMul = numParam('staleMul', 2, 0.1);
+    var boardWatch = numParam('boardwatch', 30, 0, 3600);   // 0 = never re-check the board
     var margin = numParam('margin', 60, 0, 5000);
     var showGrid = params.get('grid') === '1';        // grid OFF by default in kiosk
     var bgColor = params.get('bg');                   // e.g. ?bg=%23111827 (dark) or ?bg=white
@@ -336,7 +352,11 @@
     ['up', 'degraded', 'down', 'unmonitored'].forEach(function (s) {
         var item = document.createElement('span');
         item.className = 'legend-item';
-        item.innerHTML = '<span class="legend-swatch" style="background:' + COLORS[s] +
+        // The swatch is an OUTLINE, not a filled block, so it mirrors what is
+        // actually on the board - a ring - and can carry the same dash pattern.
+        // A legend that only varies by colour cannot be used by the people the
+        // dash patterns are there for.
+        item.innerHTML = '<span class="legend-swatch st-' + s + '" style="border-color:' + COLORS[s] +
             '"></span><span id="count-' + s + '">0</span>&nbsp;' + s;
         hud.appendChild(item);
     });
@@ -421,7 +441,10 @@
             });
             if (!keys.length) return;
             var r = document.createElementNS(SVGNS, 'rect');
-            r.setAttribute('class', 'status-ring');
+            // zone-ring marks it as a ZONE outline, not a device: the red body
+            // wash and pulse on st-down are scoped away from these, because
+            // washing an entire zone red would drown the devices inside it.
+            r.setAttribute('class', 'status-ring zone-ring');
             r.setAttribute('x', z.x - 6); r.setAttribute('y', z.y - 6);
             r.setAttribute('width', z.w + 12); r.setAttribute('height', z.h + 12);
             r.setAttribute('rx', 12);
@@ -488,11 +511,16 @@
             if (ring.key) { stateByKey[ring.key] = s; }
             if (s === 'down') { downNames.push(ring.name); }
             ring.el.setAttribute('stroke', COLORS[s]);
-            // .down also applies the translucent red body wash - that lives in
-            // kiosk.css (.status-ring.down), NOT as a fill attribute here: the
+            // The st-<state> class carries a DASH PATTERN that says the same
+            // thing the colour does. up and degraded used to differ by hue
+            // alone (#2e9b57 vs #d9a406) - the classic red-green confusion
+            // pair - so to a deuteranope a degrading device read as healthy,
+            // the worst direction for that to fail. Patterns live in
+            // kiosk.css; st-down additionally applies the translucent red body
+            // wash, which must be CSS and not a fill attribute here (the
             // stylesheet's `fill: none` on .status-ring would override any
-            // attribute value (CSS beats SVG presentation attributes).
-            ring.el.classList.toggle('down', s === 'down');
+            // attribute value - CSS beats SVG presentation attributes).
+            ring.el.setAttribute('class', 'status-ring st-' + s);
             if (ring.lat) {
                 var e = window.StatusFeed.entryFor(devicesByIp, ring.key);
                 ring.lat.textContent =
@@ -509,7 +537,13 @@
             });
             var alert = worst === 'down' || worst === 'degraded';
             zr.el.style.display = alert ? '' : 'none';
-            if (alert) { zr.el.setAttribute('stroke', COLORS[worst]); }
+            if (alert) {
+                zr.el.setAttribute('stroke', COLORS[worst]);
+                // Same dash encoding as devices, so a zone flagged for a
+                // DEGRADED member is tellable from one flagged for a DOWN
+                // member without reading the colour.
+                zr.el.setAttribute('class', 'status-ring zone-ring st-' + worst);
+            }
         });
 
         document.getElementById('count-up').textContent = counts.up;
@@ -573,6 +607,49 @@
             });
         });
     }
+    // --- board-change watcher ------------------------------------------------
+    // The board is fetched ONCE, so a swap underneath a running wall leaves the
+    // display frozen on the old one - and the poller re-reads the board every
+    // cycle, so the two disagree immediately. That is worse than stale: a device
+    // whose IP or Monitor ID changed keeps being probed under a NEW feed key
+    // while its old element, bound to the old key, renders gray "unmonitored".
+    // Red turning gray reads as "resolved" when it means "no longer watched".
+    // Nobody is standing at a wall display to press F5, so the kiosk notices for
+    // itself. Cheap: one HEAD per interval against a static file.
+    //
+    // The fingerprint is whatever the server will commit to - ETag, then
+    // Last-Modified, then Content-Length. If it offers none of those the value
+    // is a constant, so the wall never reloads rather than reloading forever on
+    // a server that cannot answer the question.
+    function boardFingerprint(url) {
+        return fetch(url, { method: 'HEAD', cache: 'no-store' }).then(function (r) {
+            if (!r.ok) { return null; }               // absent (404) is a state too
+            return r.headers.get('etag')
+                || r.headers.get('last-modified')
+                || r.headers.get('content-length')
+                || 'present';
+        }).catch(function () { return undefined; });  // transient: undefined = "no opinion"
+    }
+
+    function watchBoard(url) {
+        if (!boardWatch) { return; }
+        var baseline;
+        boardFingerprint(url).then(function (fp) {
+            baseline = fp;
+            setInterval(function () {
+                boardFingerprint(url).then(function (fp2) {
+                    // undefined means the check itself failed (a blip, or the web
+                    // tier restarting). Only a real, different answer reloads -
+                    // a wall that reloads on every network hiccup is worse than
+                    // one that is briefly stale.
+                    if (fp2 === undefined || fp2 === baseline) { return; }
+                    baseline = fp2;
+                    location.reload();
+                });
+            }, boardWatch * 1000);
+        });
+    }
+
     function starterOrDie() {
         return fetchBoardJson('starter-board.xcanvas').catch(function () {
             // Starter missing too (partial deploy): report the board
@@ -580,23 +657,32 @@
             throw new Error('not found - place a board file here (the bundled starter board is also missing from this deployment)');
         });
     }
+    // Walk the remaining default locations. Only a 404 advances to the next:
+    // anything else (5xx, truncated JSON) is LOUD and names the file it hit,
+    // because a board that EXISTS but is broken must never masquerade as a
+    // fresh install.
+    function tryFallbacks(list) {
+        if (!list.length) { starterActive = true; return starterOrDie(); }
+        var next = list[0];
+        return fetchBoardJson(next)
+            .then(function (data) { boardUrl = next; return data; })
+            .catch(function (err) {
+                if (!err.missing) { boardUrl = next; throw err; }
+                return tryFallbacks(list.slice(1));
+            });
+    }
+
     fetchBoardJson(boardUrl)
         .catch(function (err) {
             if (!err.missing) { throw err; }            // BROKEN: always loud
-            if (!legacyBoardUrl) {
+            if (explicitBoard) {
                 // Explicit ?board= that is absent: starter guidance, but
                 // remember the path so the ticker can name it.
                 starterActive = true;
                 missingBoardPath = boardUrl;
                 return starterOrDie();
             }
-            // Default-board fallback only: data folders from before the rename
-            // hold board.netdraw, and an unconfigured wall should keep working.
-            return fetchBoardJson(legacyBoardUrl).catch(function (err2) {
-                if (!err2.missing) { boardUrl = legacyBoardUrl; throw err2; }
-                starterActive = true;
-                return starterOrDie();
-            });
+            return tryFallbacks(boardFallbacks);
         })
         .then(function (data) {
             window.CrossCanvas.load(data);
@@ -634,8 +720,23 @@
                 clock.textContent = missingBoardPath
                     ? 'no board at ' + missingBoardPath + ' yet'
                     : 'starter board - nothing is monitored yet';
+                // Watch the path the operator is going to fill, not the starter
+                // we fell back to: this is the fresh-install case, where the
+                // first upload should light the wall up without anyone walking
+                // over to it.
+                watchBoard(missingBoardPath || boardUrl);
                 return;
             }
+
+            // Where the board was FOUND tells us which layout this deployment
+            // uses, so the sibling feeds default to that same directory rather
+            // than to the web root. Without this, a suite install found its
+            // board under /data/ and then read a status file that was never
+            // there - a live-looking wall with every device permanently gray.
+            // Explicit ?status= / ?snmp= always win.
+            var feedDir = dirOf(boardUrl);
+            if (!explicitStatus) { statusUrl = feedDir + 'status.json'; }
+            if (!explicitSnmp) { snmpUrl = feedDir + 'snmp-status.json'; }
 
             var feed = new window.StatusFeed({
                 url: statusUrl,
@@ -645,10 +746,14 @@
                 onStale: applyStale
             });
             feed.start();
+            watchBoard(boardUrl);
 
-            // Optional SNMP link overlay: inert unless ?snmp= is present. Runs
-            // its own feed against the SNMPCanvas snmp-status.json, independent
-            // of the device feed above. Needs #status-overlay (built just now).
+            // SNMP link overlay. The path is now derived from the board's
+            // directory rather than requiring ?snmp=, which is safe because
+            // SnmpLayer.init returns immediately when the board carries no
+            // {CODE} bindings - a board that never mentions SNMP opens no feed
+            // and costs nothing. A board that DOES mention it clearly wants the
+            // data, and previously got nothing unless the URL was typed in full.
             if (snmpUrl && window.SnmpLayer) {
                 window.SnmpLayer.init({ snmpUrl: snmpUrl, interval: snmpInterval, staleMul: staleMul,
                                         annStyle: params.get('annstyle') });

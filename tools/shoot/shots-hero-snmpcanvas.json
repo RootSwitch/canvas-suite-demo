@@ -1,0 +1,34 @@
+[
+  {
+    "name": "q1-devices",
+    "url": "http://localhost:8095/snmpcanvas/#/devices",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "snmpcanvas-theme": "classic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 500
+  },
+  {
+    "name": "q2-device",
+    "url": "http://localhost:8095/snmpcanvas/#/device/2",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "snmpcanvas-theme": "ember" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 900
+  },
+  {
+    "name": "q3-graph",
+    "url": "http://localhost:8095/snmpcanvas/#/devices",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "snmpcanvas-theme": "blueprint" },
+    "script": "document.getElementById('demo-ribbon')?.remove(); (async () => { const r = await fetch('/api/devices/2').then(x => x.json()); const e = r.entities.find(x => x.name === 'Gi1/0/1'); if (!e) throw new Error('core-sw Gi1/0/1 not found'); location.hash = '#/device/2/entity/' + e.id; })()",
+    "afterScriptMs": 3000
+  },
+  {
+    "name": "q4-wizard",
+    "url": "http://localhost:8095/snmpcanvas/?demo=discover#/devices",
+    "width": 1600, "height": 1000, "scale": 1,
+    "storage": { "snmpcanvas-theme": "glacier" },
+    "script": "document.getElementById('demo-ribbon')?.remove(); (() => { const s = document.createElement('style'); s.textContent = 'dialog[open]{position:fixed;inset:0;margin:auto;}'; document.head.appendChild(s); document.getElementById('add-btn').click(); document.getElementById('f-host').value = '10.20.30.11'; document.getElementById('probe-btn').click(); })()",
+    "afterScriptMs": 1600
+  }
+]
