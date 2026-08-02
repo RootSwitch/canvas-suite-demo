@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>hero brand-corner compose</title>
+<style>
+    /* Hero overlay: the existing hero image full-bleed, with a compact brand
+       card floating in the upper-left corner - mark + name + the one-liner,
+       nothing else. The social card pitches; the hero corner just introduces.
+       Sized for the 3200x2000 hero composites (PingCanvas's 3840x2160 kiosk
+       is handled by the shot list using its own width/height). */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 3200px; height: 2000px; overflow: hidden; }
+    body { position: relative; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .hero { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .corner {
+        position: absolute; top: 64px; left: 64px;
+        max-width: 1180px;
+        background: color-mix(in srgb, var(--bg) 94%, transparent);
+        border: 2px solid var(--border);
+        border-radius: 28px;
+        padding: 56px 72px 60px;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+    }
+    .brand { display: flex; align-items: center; gap: 34px; }
+    .brand img { width: 120px; height: 120px; }
+    .brand h1 { font-size: 104px; font-weight: 800; color: var(--txt); letter-spacing: -2px; }
+    .head { font-size: 52px; line-height: 1.3; font-weight: 600; color: var(--txt); margin-top: 30px; }
+    .head .a { color: var(--accent); }
+</style>
+</head>
+<body>
+<script>
+const THEMES = {
+    synthwave: { bg: '#120a24', txt: '#ece6ff', dim: '#a596c9', accent: '#ff4d8d', border: '#3a2560' },
+    blueprint: { bg: '#0e2136', txt: '#dfe9f5', dim: '#93aecb', accent: '#7fd4ff', border: '#2a4d73' },
+    nocturne:  { bg: '#1e1f29', txt: '#f8f8f2', dim: '#a3a9c9', accent: '#bd93f9', border: '#44475a' },
+    phosphor:  { bg: '#071007', txt: '#a8f0a0', dim: '#5c9e57', accent: '#39ff14', border: '#1e3a1a' },
+    amber:     { bg: '#100b04', txt: '#ffcc66', dim: '#a8813c', accent: '#ffb000', border: '#3a2a12' },
+    garnet:    { bg: '#240d14', txt: '#f2e6e9', dim: '#c39aa5', accent: '#d9556e', border: '#592433' },
+    arctic:    { bg: '#272c36', txt: '#eceff4', dim: '#9aa5b8', accent: '#88c0d0', border: '#434c5e' },
+};
+
+// Same voice as the social cards, compressed to one line.
+const HEROES = {
+    crosscanvas: {
+        theme: 'blueprint', name: 'CrossCanvas', icon: 'assets/crosscanvas.svg',
+        head: 'Draw the network you actually run - in a <span class="a">single HTML file</span>.',
+        hero: 'bg/hero-crosscanvas.png',
+    },
+    pingcanvas: {
+        theme: 'nocturne', name: 'PingCanvas', icon: 'assets/pingcanvas.svg',
+        head: 'Your network diagram, <span class="a">with a pulse</span>.',
+        hero: 'bg/hero-pingcanvas.png',
+    },
+    snmpcanvas: {
+        theme: 'phosphor', name: 'SNMPCanvas', icon: 'assets/snmpcanvas.svg',
+        head: 'Poll your gear over SNMP and <span class="a">keep the history</span>.',
+        hero: 'bg/hero-snmpcanvas.png',
+    },
+    syslogcanvas: {
+        theme: 'amber', name: 'SyslogCanvas', icon: 'assets/syslogcanvas.svg',
+        head: 'Every syslog message, <span class="a">searchable the moment it lands</span>.',
+        hero: 'bg/hero-syslogcanvas.png',
+    },
+    alertcanvas: {
+        theme: 'garnet', name: 'AlertCanvas', icon: 'assets/alertcanvas.svg',
+        head: 'When a threshold trips, <span class="a">you hear about it</span>.',
+        hero: 'bg/hero-alertcanvas.png',
+    },
+    launchcanvas: {
+        theme: 'arctic', name: 'LaunchCanvas', icon: 'assets/launchcanvas.svg',
+        head: 'One login, <span class="a">every canvas</span>.',
+        hero: 'bg/hero-launchcanvas.png',
+    },
+};
+
+const card = HEROES[new URLSearchParams(location.search).get('card')] || HEROES.crosscanvas;
+const t = THEMES[card.theme];
+for (const [k, v] of Object.entries(t)) document.documentElement.style.setProperty('--' + k, v);
+document.body.innerHTML = `
+    <img class="hero" src="${card.hero}">
+    <div class="corner">
+        <div class="brand"><img src="${card.icon}"><h1>${card.name}</h1></div>
+        <div class="head">${card.head}</div>
+    </div>`;
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[
+  {
+    "name": "hero-card-crosscanvas",
+    "url": "http://localhost:8095/tools/shoot/cards/hero-card.html?card=crosscanvas",
+    "width": 3200,
+    "height": 2000,
+    "scale": 1,
+    "waitMs": 1500
+  }
+]
