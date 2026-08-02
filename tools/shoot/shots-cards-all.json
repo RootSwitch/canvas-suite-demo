@@ -1,0 +1,9 @@
+[
+  { "name": "card-crosscanvas",  "url": "http://localhost:8095/tools/shoot/cards/card.html?card=crosscanvas",  "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-pingcanvas",   "url": "http://localhost:8095/tools/shoot/cards/card.html?card=pingcanvas",   "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-snmpcanvas",   "url": "http://localhost:8095/tools/shoot/cards/card.html?card=snmpcanvas",   "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-syslogcanvas", "url": "http://localhost:8095/tools/shoot/cards/card.html?card=syslogcanvas", "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-alertcanvas",  "url": "http://localhost:8095/tools/shoot/cards/card.html?card=alertcanvas",  "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-launchcanvas", "url": "http://localhost:8095/tools/shoot/cards/card.html?card=launchcanvas", "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 },
+  { "name": "card-suite",        "url": "http://localhost:8095/tools/shoot/cards/card.html?card=suite",        "width": 1280, "height": 640, "scale": 1, "waitMs": 1200 }
+]

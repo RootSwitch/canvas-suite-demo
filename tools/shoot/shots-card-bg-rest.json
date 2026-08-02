@@ -1,0 +1,50 @@
+[
+  {
+    "name": "bg-pingcanvas",
+    "url": "http://localhost:8095/kiosk/kiosk.html?board=data/board.xcanvas&status=data/bad-status.json&snmp=data/bad-snmp-status.json&staleMul=9999999&theme=nocturne&themeRecolor=1",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "waitMs": 4000
+  },
+  {
+    "name": "bg-snmpcanvas",
+    "url": "http://localhost:8095/snmpcanvas/#/devices",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "storage": { "snmpcanvas-theme": "phosphor" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 900
+  },
+  {
+    "name": "bg-syslogcanvas",
+    "url": "http://localhost:8095/syslogcanvas/#/messages",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "storage": { "syslogcanvas-theme": "amber" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 900
+  },
+  {
+    "name": "bg-alertcanvas",
+    "url": "http://localhost:8095/alertcanvas/?demo=storm#/alarms",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "storage": { "alertcanvas-theme": "garnet" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 900
+  },
+  {
+    "name": "bg-launchcanvas",
+    "url": "http://localhost:8095/index.html",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "storage": { "alertcanvas-theme": "arctic" },
+    "script": "document.getElementById('demo-ribbon')?.remove()",
+    "afterScriptMs": 900
+  }
+]
