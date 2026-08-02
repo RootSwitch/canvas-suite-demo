@@ -14,16 +14,22 @@
         font-family: 'Segoe UI', system-ui, sans-serif;
         background: var(--bg);
     }
-    /* The screenshot layer: right-aligned, dimmed, fading out leftward so the
-       panel text never fights it. Mask, not overlay - the card background
-       shows THROUGH, keeping the fade in-theme. */
-    .shot {
+    /* The screenshot layer: dimmed and fading out leftward so the panel text
+       never fights it. Mask, not overlay - the card background shows THROUGH,
+       keeping the fade in-theme.
+       The inner img is PANNED AND ZOOMED per card (shotW / shotX): a
+       screenshot's subject is rarely its geometric centre, and only the right
+       ~55% of the card is visible, so each app is framed so the part that
+       identifies it - device names, the down zone, the tiles - lands in that
+       band rather than under the text. Backgrounds are shot at 2x so this
+       zoom is always a downsample. */
+    .shotwrap {
         position: absolute; top: 0; right: 0; width: 1280px; height: 640px;
-        object-fit: cover; object-position: right top;
-        opacity: 0.6;
-        -webkit-mask-image: linear-gradient(90deg, transparent 41%, #000 68%);
-        mask-image: linear-gradient(90deg, transparent 41%, #000 68%);
+        overflow: hidden;
+        -webkit-mask-image: linear-gradient(90deg, transparent var(--m0), #000 var(--m1));
+        mask-image: linear-gradient(90deg, transparent var(--m0), #000 var(--m1));
     }
+    .shotwrap img { position: absolute; opacity: 0.6; }
     .panel { position: absolute; inset: 0; padding: 64px 0 56px 76px; width: 620px; }
     .brand { display: flex; align-items: center; gap: 22px; }
     .brand img { width: 74px; height: 74px; }
@@ -69,45 +75,45 @@ const THEMES = {
 const CARDS = {
     crosscanvas: {
         theme: 'blueprint', name: 'CrossCanvas', icon: 'assets/crosscanvas.svg',
-        head: 'Draw the network you actually run, in a <span class="a">single HTML file</span> that works anywhere.',
-        sub: 'No accounts, no cloud, no build step. 55 network stencils, 29 themes, and it imports your Visio, Gliffy and draw.io diagrams.',
+        head: 'Draw the network you actually run - <span class="a">no install, no account, no cloud</span>.',
+        sub: 'The whole editor is one HTML file: open it from a folder, a file share, or a USB stick. Diagrams save as .xcanvas.',
         chips: ['Stencils', 'Themes', '.vsdx / .gliffy import', 'Offline'],
-        shot: 'bg/bg-crosscanvas.png',
+        shot: 'bg/bg-crosscanvas.png', shotW: 1520, shotX: 250, shotY: -95,
     },
     pingcanvas: {
         theme: 'nocturne', name: 'PingCanvas', icon: 'assets/pingcanvas.svg',
         head: 'Your network diagram, <span class="a">with a pulse</span>.',
         sub: 'Point it at the board you drew in CrossCanvas - every device with an address recolors as it answers, kiosk-ready, around the clock.',
         chips: ['Kiosk', 'Ping sweep', 'SNMP layer', 'Docker'],
-        shot: 'bg/bg-pingcanvas.png',
+        shot: 'bg/bg-pingcanvas.png', shotW: 1650, shotX: 214, shotY: -220,
     },
     snmpcanvas: {
         theme: 'phosphor', name: 'SNMPCanvas', icon: 'assets/snmpcanvas.svg',
         head: 'Poll your gear over SNMP and <span class="a">keep the history</span>.',
         sub: 'CPU, temps, fans, PSUs, UPS runtime - v2c and v3, vendor-aware, stored in SQLite with a dependency-light UI.',
         chips: ['v2c / v3', 'History', 'Vendor OIDs', 'Self-hosted'],
-        shot: 'bg/bg-snmpcanvas.png',
+        shot: 'bg/bg-snmpcanvas.png', shotW: 1700, shotX: 264,
     },
     syslogcanvas: {
         theme: 'amber', name: 'SyslogCanvas', icon: 'assets/syslogcanvas.svg',
         head: 'Every syslog message, <span class="a">searchable the moment it lands</span>.',
         sub: 'A self-hosted receiver and viewer: live tail, severity filters, device breakdowns, CSV export.',
         chips: ['Live tail', 'Filters', 'Export', 'Docker'],
-        shot: 'bg/bg-syslogcanvas.png',
+        shot: 'bg/bg-syslogcanvas.png', shotW: 1520, shotX: 300,
     },
     alertcanvas: {
         theme: 'garnet', name: 'AlertCanvas', icon: 'assets/alertcanvas.svg',
         head: 'When a threshold trips, <span class="a">you hear about it</span>.',
         sub: 'Watches the suite’s monitoring feeds and raises alerts by email, ntfy push, or syslog - and clears them when things recover.',
         chips: ['Email', 'ntfy', 'Syslog', 'Thresholds'],
-        shot: 'bg/bg-alertcanvas.png',
+        shot: 'bg/bg-alertcanvas.png', shotW: 1560, shotX: 424, shotY: -40,
     },
     launchcanvas: {
         theme: 'arctic', name: 'LaunchCanvas', icon: 'assets/launchcanvas.svg',
         head: 'One login, <span class="a">every canvas</span>.',
         sub: 'The suite’s front door: a tile launcher with sign-in, single sign-on to the other apps, and board uploads.',
         chips: ['Portal', 'SSO', 'Boards', 'Docs'],
-        shot: 'bg/bg-launchcanvas.png',
+        shot: 'bg/bg-launchcanvas.png', shotW: 1520, shotX: 250,
     },
     suite: {
         theme: 'synthwave', name: 'Canvas Suite', icon: 'assets/suite.svg',
@@ -121,10 +127,21 @@ const CARDS = {
 const card = CARDS[new URLSearchParams(location.search).get('card')] || CARDS.crosscanvas;
 const t = THEMES[card.theme];
 for (const [k, v] of Object.entries(t)) document.documentElement.style.setProperty('--' + k, v);
+
+// Mask stops, per card when the framing needs more room (SNMPCanvas pans far
+// enough right that the default fade would eat its device-name column).
+document.documentElement.style.setProperty('--m0', (card.mask ? card.mask[0] : 41) + '%');
+document.documentElement.style.setProperty('--m1', (card.mask ? card.mask[1] : 68) + '%');
+
+// Backgrounds are 2:1, so height follows width; centre the vertical overflow
+// unless a card asks for a specific offset.
+const sw = card.shotW || 1280;
+const sy = card.shotY != null ? card.shotY : Math.round((640 - sw / 2) / 2);
+
 document.body.innerHTML = `
     ${card.collage
         ? `<div class="collage">${card.collage.map(a => `<img src="assets/${a}.svg">`).join('')}</div>`
-        : `<img class="shot" src="${card.shot}">`}
+        : `<div class="shotwrap"><img src="${card.shot}" style="width:${sw}px;left:${card.shotX || 0}px;top:${sy}px"></div>`}
     <div class="panel">
         <div class="brand"><img src="${card.icon}"><h1>${card.name}</h1></div>
         <div class="rule"></div>

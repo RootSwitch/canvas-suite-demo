@@ -120,6 +120,26 @@ async function main() {
             await sleep(shot.afterScriptMs || 900);
         }
 
+        // A dead dev server does not throw - Chrome serves its own error page and
+        // the capture succeeds, so the run reports success and writes a PNG of
+        // "This site can't be reached". That has silently cost three shoot
+        // rounds now. Fail loudly instead: an error page has no document URL of
+        // our own origin, and Chrome marks it with a specific body class.
+        const { result: bad } = await send('Runtime.evaluate', {
+            expression: `(() => {
+                if (document.body && document.body.classList.contains('neterror')) return 'chrome error page';
+                if (/^chrome-error:/.test(location.href)) return 'chrome-error: ' + location.href;
+                if (!document.body || document.body.innerText.trim() === '') return 'blank page';
+                return '';
+            })()`,
+            returnByValue: true,
+        });
+        if (bad && bad.value) {
+            throw new Error(`${shot.name}: ${bad.value} at ${shot.url}\n` +
+                '  The target server is probably not running. Start it and re-run - ' +
+                'do NOT ship what this would have written.');
+        }
+
         const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         const file = path.join(outdir, `${shot.name}.png`);
         fs.writeFileSync(file, Buffer.from(data, 'base64'));

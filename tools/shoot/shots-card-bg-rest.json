@@ -4,7 +4,7 @@
     "url": "http://localhost:8095/kiosk/kiosk.html?board=data/board.xcanvas&status=data/bad-status.json&snmp=data/bad-snmp-status.json&staleMul=9999999&theme=nocturne&themeRecolor=1",
     "width": 1600,
     "height": 800,
-    "scale": 1,
+    "scale": 2,
     "waitMs": 4000
   },
   {
@@ -12,8 +12,10 @@
     "url": "http://localhost:8095/snmpcanvas/#/devices",
     "width": 1600,
     "height": 800,
-    "scale": 1,
-    "storage": { "snmpcanvas-theme": "phosphor" },
+    "scale": 2,
+    "storage": {
+      "snmpcanvas-theme": "phosphor"
+    },
     "script": "document.getElementById('demo-ribbon')?.remove()",
     "afterScriptMs": 900
   },
@@ -22,8 +24,10 @@
     "url": "http://localhost:8095/syslogcanvas/#/messages",
     "width": 1600,
     "height": 800,
-    "scale": 1,
-    "storage": { "syslogcanvas-theme": "amber" },
+    "scale": 2,
+    "storage": {
+      "syslogcanvas-theme": "amber"
+    },
     "script": "document.getElementById('demo-ribbon')?.remove()",
     "afterScriptMs": 900
   },
@@ -32,8 +36,10 @@
     "url": "http://localhost:8095/alertcanvas/?demo=storm#/alarms",
     "width": 1600,
     "height": 800,
-    "scale": 1,
-    "storage": { "alertcanvas-theme": "garnet" },
+    "scale": 2,
+    "storage": {
+      "alertcanvas-theme": "garnet"
+    },
     "script": "document.getElementById('demo-ribbon')?.remove()",
     "afterScriptMs": 900
   },
@@ -42,8 +48,10 @@
     "url": "http://localhost:8095/index.html",
     "width": 1600,
     "height": 800,
-    "scale": 1,
-    "storage": { "alertcanvas-theme": "arctic" },
+    "scale": 2,
+    "storage": {
+      "alertcanvas-theme": "arctic"
+    },
     "script": "document.getElementById('demo-ribbon')?.remove()",
     "afterScriptMs": 900
   }
