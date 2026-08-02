@@ -65,6 +65,11 @@ function Get-Normalized {
     $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($Path))
     if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
     $text = [regex]::Replace($text, '(?m)^[ \t]*<script src="[^"]*demo[-/][^"]*\.js"></script>\r?\n', '')
+    # The demo's home is the whole suite, so the build retitles the vendored
+    # LaunchCanvas page. Normalise it back, exactly like the shim above: a
+    # DELIBERATE difference must not read as drift, or the check reports STALE
+    # on every run and stops being read at all.
+    $text = $text -replace '<title>Canvas Suite Demo</title>', '<title>LaunchCanvas</title>'
     $text = $text -replace "`r`n", "`n"
     return $text
 }
@@ -94,7 +99,11 @@ if ($Check) {
     $all = @()
     # The same mapping the vendoring below uses, kept adjacent on purpose: if one
     # moves, the other is in view.
-    foreach ($x in (Test-Vendored (Join-Path $LaunchCanvas 'public') $Root -Only @('*.html','*.js','*.css','favicon.svg','icons\*','tiles\*'))) {
+    # favicon.svg is SKIPPED, not compared: the build replaces LaunchCanvas's
+    # door mark with the suite mark on purpose (demo/suite-favicon.svg is the
+    # source of truth for it). Comparing it against LaunchCanvas would report
+    # STALE forever - the same trap the retitle above avoids.
+    foreach ($x in (Test-Vendored (Join-Path $LaunchCanvas 'public') $Root -Only @('*.html','*.js','*.css','icons\*','tiles\*'))) {
         $all += ('{0,-13} {1}' -f 'launchcanvas', $x)
     }
     foreach ($x in (Test-Vendored (Join-Path $PingCanvas 'kiosk') (Join-Path $Root 'kiosk') -Skip @('web.config','README.md'))) {
