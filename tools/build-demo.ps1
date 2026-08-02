@@ -140,6 +140,16 @@ if ($html -notmatch 'demo-api\.js') {
     Write-Host '  ok demo shim injected into index.html'
 } else { Write-Host '  ok demo shim already present' }
 
+# The demo's home is the whole SUITE, not the LaunchCanvas app it vendors -
+# so the tab wears the suite mark and name, not the member app's door.
+Copy-Item (Join-Path $Root 'demo\suite-favicon.svg') (Join-Path $Root 'favicon.svg') -Force
+$html = Get-Content $idx -Raw
+$retitled = $html -replace '<title>LaunchCanvas</title>', '<title>Canvas Suite Demo</title>'
+if ($retitled -ne $html) {
+    Set-Content $idx $retitled -Encoding utf8 -NoNewline
+    Write-Host '  ok suite identity applied (favicon + title)'
+} else { Write-Host '  ok suite title already present' }
+
 # ----- PingCanvas kiosk -> kiosk/ --------------------------------------------
 Write-Host '==> Vendoring PingCanvas kiosk/'
 $pcKiosk = Join-Path $PingCanvas 'kiosk'

@@ -1,0 +1,11 @@
+[
+  {
+    "name": "bg-crosscanvas",
+    "url": "http://localhost:3000/index.html?sample=complex&theme=blueprint&recolor=1&fit=1",
+    "width": 1600,
+    "height": 800,
+    "scale": 1,
+    "storage": { "crosscanvas-dark": "1", "crosscanvas-visited": "1" },
+    "waitMs": 3000
+  }
+]

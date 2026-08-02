@@ -101,7 +101,9 @@
         dirty: false,
         inlineEditing: null,
         diagramTitle: 'network-diagram',
-        diagramVersion: 1,
+        // Saves so far: 0 = never saved, so the first save writes v1 and the
+        // header shows the version the file on disk actually carries.
+        diagramVersion: 0,
         zoom: 1,
         panning: null,
         showGrid: true,
@@ -120,6 +122,13 @@
     // this file for the surface embedders call. (The pre-rename NETDRAW_EMBED
     // flag stays honored so an older kiosk page works against a newer app.js.)
     const EMBED = !!(window.CROSSCANVAS_EMBED || window.NETDRAW_EMBED);
+
+    // tests.html drives the REAL app in a same-origin iframe, sharing this
+    // origin's localStorage. Theme/round-trip fixtures dirty the document,
+    // which would autosave the fixture over a developer's real work and even
+    // pop a restore prompt on boot. In cctest mode the app must never touch the
+    // autosave slot - same rule as EMBED, different reason.
+    const CCTEST = location.search.indexOf('cctest') >= 0;
 
     // One-time migration of pre-rename localStorage (netdraw-*) so nobody
     // loses their settings to the rebrand. The list is the FULL v3.1 key
@@ -169,6 +178,25 @@
         }
         return value;
     }
+    // The intern tables would otherwise grow for the whole session: a key
+    // minted for a snapshot that is later evicted off the capped undo stack
+    // stays in the maps, so a long session pasting screenshots retains every
+    // image until reload. Sweep unreferenced keys once the table gets large -
+    // cheap no-op below the threshold, so normal editing never pays for it.
+    const INTERN_GC_THRESHOLD = 128;
+    function gcSnapshotIntern() {
+        if (snapImageByKey.size < INTERN_GC_THRESHOLD) return;
+        const live = new Set();
+        // Keys serialize into the JSON snapshots as the escape \u0000img<N>;
+        // reconstruct the in-memory key form (real NUL + img<N>) to compare.
+        const re = /\\u0000img(\d+)/g;
+        const scan = (json) => { let m; re.lastIndex = 0; while ((m = re.exec(json))) { live.add('\u0000img' + m[1]); } };
+        undoStack.forEach(scan);
+        redoStack.forEach(scan);
+        Array.from(snapImageByKey.keys()).forEach(k => {
+            if (!live.has(k)) { const img = snapImageByKey.get(k); snapImageByKey.delete(k); snapKeyByImage.delete(img); }
+        });
+    }
 
     function snapshotState() {
         return JSON.stringify({
@@ -195,6 +223,7 @@
         undoStack.push(snapshotState());
         if (undoStack.length > MAX_UNDO) undoStack.shift();
         redoStack.length = 0;
+        gcSnapshotIntern();
         updateUndoRedoButtons();
         setDirty(true);
     }
@@ -308,6 +337,7 @@
             undoStack.push(undoDebounceSnapshot);
             if (undoStack.length > MAX_UNDO) undoStack.shift();
             redoStack.length = 0;
+            gcSnapshotIntern();
             updateUndoRedoButtons();
             setDirty(true);
         }
@@ -340,6 +370,7 @@
             undoStack.push(preDragSnapshot);
             if (undoStack.length > MAX_UNDO) undoStack.shift();
             redoStack.length = 0;
+            gcSnapshotIntern();
             updateUndoRedoButtons();
             setDirty(true);
         }
@@ -807,9 +838,22 @@
     // each connection to whichever new AP is closest to where it was.
     function setNodeAPCount(node, newCount) {
         const recorded = [];
+        // Bend-carrying connections get their rendered path captured too, so
+        // the bends can be re-fitted after the endpoints re-snap - ratcheting
+        // the AP count re-derives every attached connection at once, which
+        // otherwise strands each one's shape (refitBendsToPath). Waypoint
+        // routes are left alone here: their endpoints re-snap by a few pixels
+        // and the waypoints themselves still stand.
+        const shaped = [];
         state.connections.forEach(c => {
             if (c.fromDevice === node.id) recorded.push({ conn: c, end: 'from', pos: getAbsoluteAP(node, c.fromAP) });
             if (c.toDevice === node.id) recorded.push({ conn: c, end: 'to', pos: getAbsoluteAP(node, c.toAP) });
+            if ((c.fromDevice === node.id || c.toDevice === node.id) &&
+                c.bends && Object.keys(c.bends).length && !(c.waypoints && c.waypoints.length)) {
+                const s = resolveConnEndpoint(c, 'from');
+                const e = resolveConnEndpoint(c, 'to');
+                if (s && e) shaped.push({ conn: c, oldPts: connRoutePoints(c, s, e).map(p => ({ x: p.x, y: p.y })) });
+            }
         });
         node.attachmentPoints = distributeAttachmentPoints(node.w, node.h, newCount);
         recorded.forEach(rec => {
@@ -822,6 +866,8 @@
             if (rec.end === 'from') rec.conn.fromAP = bestIdx;
             else rec.conn.toAP = bestIdx;
         });
+        // Endpoints have their new APs; now put the shapes back.
+        shaped.forEach(sh => refitBendsToPath(sh.conn, sh.oldPts));
     }
 
     function findNode(id) {
@@ -1353,14 +1399,122 @@
     function applyManualBends(points, conn) {
         if (!conn.bends || points.length < 4) return points;
         const isVert = naturalSegmentOrientations(points);
+        // A bend is { segmentIndex: value } - an x for a vertical segment, a y
+        // for a horizontal one. The AXIS is not stored; it is re-derived from
+        // the natural route at apply time. When a reroute changes the skeleton
+        // (an endpoint moved, an AP changed, the AP count regenerated), the
+        // segment at that index can have a different orientation than the one
+        // the value was recorded under, and the value lands on the wrong axis.
+        //
+        // The written segment itself never shows the damage - writing one axis
+        // to both its endpoints keeps it aligned. Its NEIGHBOURS do: their far
+        // endpoints stay put, so a neighbour that runs along the written axis's
+        // perpendicular turns diagonal - and an orthogonal connection has no
+        // legitimate diagonal segment, ever (see the routing-invariant suite in
+        // tools/tests.html).
+        //
+        // So each bend applies only when both neighbours can absorb the write:
+        // for an x-write they must run horizontally (or be zero-length, which
+        // can stretch either way), for a y-write vertically. On the healthy
+        // alternating skeleton the bend was recorded against this always holds,
+        // so nothing the user just dragged is ever refused. After a skeleton
+        // change it often does not hold, and the bend is SKIPPED, not deleted:
+        // the route falls back to its clean natural path, and because storage
+        // is untouched, restoring the old geometry (undo, moving the AP back)
+        // restores the bent shape exactly. Checked against the LIVE array, not
+        // the pristine one - an earlier bend may have already moved a shared
+        // neighbour, and the write lands on live geometry.
+        const EPS = 0.5;
         for (const [idx, val] of Object.entries(conn.bends)) {
             const i = parseInt(idx);
             if (i < 1 || i >= points.length - 2) continue;
             const p1 = points[i], p2 = points[i + 1];
-            if (isVert[i]) { p1.x = val; p2.x = val; }
-            else { p1.y = val; p2.y = val; }
+            if (isVert[i]) {
+                if (Math.abs(points[i - 1].y - p1.y) > EPS ||
+                    Math.abs(points[i + 2].y - p2.y) > EPS) continue;
+                p1.x = val; p2.x = val;
+            } else {
+                if (Math.abs(points[i - 1].x - p1.x) > EPS ||
+                    Math.abs(points[i + 2].x - p2.x) > EPS) continue;
+                p1.y = val; p2.y = val;
+            }
         }
         return points;
+    }
+
+    // Re-fit manual bends to the path the user last saw, after a reroute
+    // changed the skeleton underneath them - an endpoint moved to a different
+    // AP, or an AP-count change re-snapping every endpoint on a node.
+    //
+    // Without this the shaped route snapped back to the natural one: the
+    // endpoint-drag path used to DELETE the bends outright, so even a
+    // one-notch same-face AP move threw the user's shape away, and the fresh
+    // route could land across other devices with its handles buried under
+    // someone else's AP dots. The approach is the one setNodeAPCount already
+    // uses for endpoints: record where things WERE, re-derive, then put each
+    // piece back as close as the new skeleton allows.
+    //
+    // Mechanics: the old rendered polyline is a set of RAILS - axis-aligned
+    // runs, each pinned by one cross-axis coordinate, which is exactly what a
+    // bend stores. For each interior segment of the NEW natural route, find
+    // the old rail with the same orientation whose run overlaps it most
+    // (nearest by gap when none overlaps), and bend the segment to that
+    // rail's coordinate. Values on the natural line are not stored - the
+    // route is already there, and storing them would freeze segments that
+    // should stay responsive.
+    //
+    // The re-fit cannot corrupt: fitted values ride the same applyManualBends
+    // guards as hand-placed ones, so a value the new skeleton cannot absorb
+    // is skipped, never smeared into a diagonal. What it CANNOT promise is a
+    // perfect copy - a skeleton with no horizontal interior segment has
+    // nowhere to hang the old horizontal rail, so corners extend to the new
+    // stubs. Close, not identical, by construction.
+    function refitBendsToPath(conn, oldPts) {
+        if (!conn || !oldPts || oldPts.length < 2) return;
+        if (conn.routing === 'straight' || connIsFreeEnded(conn)) { delete conn.bends; return; }
+        const start = resolveConnEndpoint(conn, 'from');
+        const end = resolveConnEndpoint(conn, 'to');
+        if (!start || !end) { delete conn.bends; return; }
+        const nat = routeOrthogonal(start, end, conn);
+        if (nat.length < 4) { delete conn.bends; return; }
+        const isVert = naturalSegmentOrientations(nat);
+        // The old path's rails. A diagonal-ish segment (imported waypoint
+        // routes) classifies by its dominant axis; zero-length ones are noise.
+        const rails = [];
+        for (let i = 0; i < oldPts.length - 1; i++) {
+            const dx = Math.abs(oldPts[i].x - oldPts[i + 1].x);
+            const dy = Math.abs(oldPts[i].y - oldPts[i + 1].y);
+            if (dx < ROUTE_EPS && dy < ROUTE_EPS) continue;
+            const v = dx <= dy;
+            rails.push({
+                v,
+                cross: v ? oldPts[i].x : oldPts[i].y,
+                lo: v ? Math.min(oldPts[i].y, oldPts[i + 1].y) : Math.min(oldPts[i].x, oldPts[i + 1].x),
+                hi: v ? Math.max(oldPts[i].y, oldPts[i + 1].y) : Math.max(oldPts[i].x, oldPts[i + 1].x)
+            });
+        }
+        const bends = {};
+        for (let i = 1; i < nat.length - 2; i++) {
+            const v = isVert[i];
+            const p1 = nat[i], p2 = nat[i + 1];
+            const lo = v ? Math.min(p1.y, p2.y) : Math.min(p1.x, p2.x);
+            const hi = v ? Math.max(p1.y, p2.y) : Math.max(p1.x, p2.x);
+            const natCross = v ? p1.x : p1.y;
+            let best = null, bestOverlap = -Infinity;
+            for (const r of rails) {
+                if (r.v !== v) continue;
+                // Positive: shared run length. Negative: the gap between runs.
+                const overlap = Math.min(hi, r.hi) - Math.max(lo, r.lo);
+                const better = !best ||
+                    overlap > bestOverlap + ROUTE_EPS ||
+                    (overlap > bestOverlap - ROUTE_EPS &&
+                     Math.abs(r.cross - natCross) < Math.abs(best.cross - natCross));
+                if (better) { best = r; bestOverlap = overlap; }
+            }
+            if (best && Math.abs(best.cross - natCross) > ROUTE_EPS) bends[i] = best.cross;
+        }
+        if (Object.keys(bends).length) conn.bends = bends;
+        else delete conn.bends;
     }
 
     // Capture the manual-bend orientations of every connection accepted by
@@ -1828,6 +1982,39 @@
         return { x: points[points.length - 1].x, y: points[points.length - 1].y };
     }
 
+    // Where a connection's label sits on its route.
+    //
+    // This used to key off the middle VERTEX - Math.floor(points.length / 2) -
+    // which is an INDEX, not a distance. On an L-shaped route the middle vertex
+    // IS the corner, so the label landed on the turn; on a long-then-short route
+    // it sat nowhere near the visual middle. Both are the crowded part of a line,
+    // which is much of why label placement felt unusable and drove people to
+    // annotations instead.
+    //
+    // getPointAlongPath is length-weighted and is what annotations have always
+    // used, so this also makes the two features agree about "the middle".
+    //
+    // ONE helper because FIVE call sites need the same answer - render, export
+    // bounds, raster draw, and two hit-tests. A label that DRAWS in one place
+    // while its click target sits in another is the same class of bug as the
+    // exporter font mismatch, and five copies of an index expression is exactly
+    // how that happens.
+    // conn.labelT slides the label along the route: 0 at the from end, 1 at the
+    // to end, ABSENT meaning the middle. Absent rather than a written 0.5 so
+    // every board that predates the feature reads identically, and so a label
+    // dragged back to centre stops carrying a field it no longer needs - the
+    // same self-erasing rule manual bends use when they land on their natural
+    // line.
+    const LABEL_T_EPS = 0.02;   // within this of centre IS centre
+    function connLabelT(conn) {
+        const t = conn && typeof conn.labelT === 'number' ? conn.labelT : 0.5;
+        return Math.max(0.02, Math.min(0.98, t));
+    }
+    function connLabelAnchor(points, conn) {
+        if (!points || points.length < 2) return { x: 0, y: 0 };
+        return getPointAlongPath(points, connLabelT(conn));
+    }
+
     function getNearestT(points, px, py) {
         if (!points || points.length < 2) return { t: 0, distance: Infinity };
 
@@ -1933,15 +2120,8 @@
         connGroup.appendChild(path);
 
         if (conn.label) {
-            const mid = Math.floor(points.length / 2);
-            let mx, my;
-            if (points.length % 2 === 0) {
-                mx = (points[mid - 1].x + points[mid].x) / 2;
-                my = (points[mid - 1].y + points[mid].y) / 2;
-            } else {
-                mx = points[mid].x;
-                my = points[mid].y;
-            }
+            const anchor0 = connLabelAnchor(points, conn);
+            const mx = anchor0.x, my = anchor0.y;
 
             const fs = conn.fontSize || 20;
             const connSpans = conn.spans || [[{ text: conn.label, bold: false, italic: false }]];
@@ -2169,31 +2349,40 @@
 
     function loadBundledTemplates() {
         // devices.js supplies the base bundle; an optional customdevices.js
-        // (a team/site stencil layer dropped next to index.html) is merged the
-        // same way. Both are script-tag globals because file:// blocks
-        // fetch() of local JSON - a <script src> is the only universal loader.
-        // Name collisions keep the base bundle's icon.
-        const sources = [window.BUNDLED_DEVICES, window.CUSTOM_DEVICES];
-        const existingNames = new Set(state.deviceTemplates.map(t => t.name));
-        let added = 0;
-        sources.forEach(src => {
+        // (a team/site stencil layer dropped next to index.html) is merged
+        // after it. Both are script-tag globals because file:// blocks fetch()
+        // of local JSON - a <script src> is the only universal loader.
+        //
+        // A customdevices.js stencil whose name matches a base one (bundled or
+        // built-in default) REPLACES its art IN PLACE - same name, so saved
+        // boards that reference it by @name pick up the new icon automatically.
+        // Custom outranks the base, matching how a user's imported stencil
+        // outranks the bundled set (see customImportTemplate). devices.js
+        // entries still base-win among THEMSELVES (first definition kept), so a
+        // duplicate name inside the bundle is a no-op.
+        const byName = new Map(state.deviceTemplates.map(t => [t.name, t]));
+        const merge = (src, isOverrideLayer) => {
             if (!src || !Array.isArray(src)) return;
             src.forEach(t => {
-                if (existingNames.has(t.name)) return;
                 if (!isSafeImageURL(t.image)) return;
-                const tpl = {
-                    id: genId(),
-                    image: t.image,
-                    name: t.name,
-                    isDefault: false,
-                    isBundled: true
-                };
-                if (typeof t.category === 'string' && t.category) tpl.category = t.category;
+                const existing = byName.get(t.name);
+                if (existing) {
+                    // Replace base art with the override layer's; leave a
+                    // user-imported stencil (neither bundled nor default) alone.
+                    if (isOverrideLayer && (existing.isBundled || existing.isDefault)) {
+                        existing.image = t.image;
+                        if (typeof t.category === 'string' && t.category) { existing.category = t.category; }
+                    }
+                    return;
+                }
+                const tpl = { id: genId(), image: t.image, name: t.name, isDefault: false, isBundled: true };
+                if (typeof t.category === 'string' && t.category) { tpl.category = t.category; }
                 state.deviceTemplates.push(tpl);
-                existingNames.add(t.name);
-                added++;
+                byName.set(t.name, tpl);
             });
-        });
+        };
+        merge(window.BUNDLED_DEVICES, false);
+        merge(window.CUSTOM_DEVICES, true);
         renderDeviceList();
     }
 
@@ -2706,12 +2895,17 @@
     // Compare the dragged rect's edges/centers against every other node's and
     // snap each axis to the nearest match within GUIDE_SNAP. Returns the
     // adjusted position plus guide-line geometry for rendering.
-    function applyAlignmentGuides(x, y, w, h, excludeId) {
+    // offsX/offsY override which offsets of the rect participate per axis:
+    // the default (both edges + center) is the move case; a resize passes
+    // just its MOVING edge so the fixed edges never attract a snap.
+    function applyAlignmentGuides(x, y, w, h, excludeId, offsX, offsY) {
+        const xOffs = offsX || [0, w / 2, w];
+        const yOffs = offsY || [0, h / 2, h];
         let bx = null, bdx = GUIDE_SNAP + 0.5, vg = null;
         let by = null, bdy = GUIDE_SNAP + 0.5, hg = null;
         const consider = (o, ow, oh) => {
             if (o.id === excludeId) return;
-            for (const off of [0, w / 2, w]) {
+            for (const off of xOffs) {
                 for (const ox of [o.x, o.x + ow / 2, o.x + ow]) {
                     const d = Math.abs((x + off) - ox);
                     if (d < bdx) {
@@ -2720,7 +2914,7 @@
                     }
                 }
             }
-            for (const off of [0, h / 2, h]) {
+            for (const off of yOffs) {
                 for (const oy of [o.y, o.y + oh / 2, o.y + oh]) {
                     const d = Math.abs((y + off) - oy);
                     if (d < bdy) {
@@ -2772,6 +2966,35 @@
         const g = applyAlignmentGuides(x, y, w, h, id);
         showGuideLines(g.vg, g.hg);
         return { x: g.x, y: g.y };
+    }
+
+    // Guide snapping for a resize: only the MOVING edge(s) attract guides, so
+    // pulling one zone's top edge up lines it up with the neighbor's top
+    // without the fixed edges wandering. rect is the proposed (already
+    // grid-snapped) geometry; a snap that would shrink below minSize is
+    // dropped along with its guide line. Alt bypasses, same as move.
+    function guideAdjustResize(e, id, rect, axis, minSize) {
+        if (!state.showGuides || e.altKey) { clearGuideLines(); return rect; }
+        const offsX = axis === 'l' ? [0] : (axis === 'r' || axis === 'both') ? [rect.w] : [];
+        const offsY = axis === 't' ? [0] : (axis === 'b' || axis === 'both') ? [rect.h] : [];
+        const g = applyAlignmentGuides(rect.x, rect.y, rect.w, rect.h, id, offsX, offsY);
+        let { x, y, w, h } = rect;
+        if (axis === 'l') {
+            const right = x + w;
+            if (right - g.x >= minSize) { x = g.x; w = right - x; } else { g.vg = null; }
+        } else if (offsX.length) {
+            const nw = w + (g.x - x);          // shift the edge, keep the origin
+            if (nw >= minSize) { w = nw; } else { g.vg = null; }
+        }
+        if (axis === 't') {
+            const bottom = y + h;
+            if (bottom - g.y >= minSize) { y = g.y; h = bottom - y; } else { g.hg = null; }
+        } else if (offsY.length) {
+            const nh = h + (g.y - y);
+            if (nh >= minSize) { h = nh; } else { g.hg = null; }
+        }
+        showGuideLines(g.vg, g.hg);
+        return { x, y, w, h };
     }
 
     function applyGuides(on) {
@@ -3231,11 +3454,18 @@
             '<ul>' +
             '<li><strong>Draw</strong> by dragging from a device edge to another device; drop on ' +
             'empty canvas for a free-floating endpoint.</li>' +
+            '<li><strong>Hold Ctrl (Cmd) as you release</strong> to end a connection exactly where ' +
+            'the cursor is, attaching to nothing - the way to draw an unplugged cable onto a device ' +
+            'that sits inside a zone, where the drop would otherwise snap to the zone.</li>' +
+            '<li><strong>Ctrl (Cmd) + drag in Connect mode moves an object</strong> instead of drawing ' +
+            'from it - for nudging something into place without switching back to the Select tool.</li>' +
             '<li><strong>Routing</strong> - Straight, Rounded, or Orthogonal per connection.</li>' +
             '<li><strong>Reshape</strong> - selected connections show bend handles (auto-routed) or ' +
             'waypoint handles (imported routes). A bend dropped on its natural line removes itself.</li>' +
             '<li><strong>Style</strong> - color, thickness, dash pattern, and independent start/end ' +
             'arrowheads. Add a label, or double-click the line for a draggable inline annotation.</li>' +
+            '<li><strong>Slide the label</strong> - drag a connection\'s label along its own line to ' +
+            'clear a busy crossing. Dropped back near the middle it re-centres itself.</li>' +
             '</ul>' +
             '<h4>Text &amp; labels</h4>' +
             '<p>Click the <strong>T</strong> toolbar button, then click the canvas to drop a text ' +
@@ -3250,8 +3480,9 @@
             'turns a saved board into a live status wall, recoloring each device by reachability.</p>' +
             '<h4>Arranging &amp; aligning</h4>' +
             '<ul>' +
-            '<li><strong>Alignment guides</strong> snap objects to each other as you drag; hold ' +
-            '<kbd>Alt</kbd> to bypass.</li>' +
+            '<li><strong>Alignment guides</strong> snap objects to each other as you drag - and ' +
+            'while resizing, the edge you pull snaps to neighboring edges (match two zones\' ' +
+            'heights by dragging one\'s top to the other\'s). Hold <kbd>Alt</kbd> to bypass.</li>' +
             '<li><strong>Align menu</strong> - align or evenly distribute a multi-selection.</li>' +
             '<li><strong>Arrange</strong> - bring to front / send to back / step forward / backward.</li>' +
             '<li><strong>Layers menu</strong> - show/hide or lock each tier (Zones, Connections, ' +
@@ -3283,8 +3514,9 @@
             '<ul>' +
             '<li><strong>File → Save</strong> writes a .xcanvas file (plain JSON); the title drives ' +
             'the filename and the version auto-increments.</li>' +
-            '<li><strong>Save with Embedded Images</strong> is self-contained - opens with full icons ' +
-            'on any install.</li>' +
+            '<li><strong>Save Self-Contained Copy</strong> embeds the stencil library instead of ' +
+            'referencing it by name, so the file opens with full icons on an install that lacks ' +
+            'your custom stencils. Pasted images and stencils you imported are already in every save.</li>' +
             '<li><strong>Open / Import Diagram</strong> loads .xcanvas (and legacy .json); <strong>Open Recent</strong> ' +
             'lists the last diagrams. Autosave offers to restore on the next launch.</li>' +
             '</ul>' +
@@ -4088,13 +4320,14 @@
     document.getElementById('diagram-title').addEventListener('input', (e) => {
         state.diagramTitle = e.target.value || 'network-diagram';
     });
-    document.getElementById('diagram-version').addEventListener('input', (e) => {
-        state.diagramVersion = Math.max(1, parseInt(e.target.value) || 1);
-    });
-
+    // The version is display-only (Gliffy-style "Name, v3"): it counts up on
+    // each save and rides inside the file - not in the filename, and not
+    // hand-editable. Opening a file (or picking an old "_v3"-suffixed name in
+    // the save dialog) still restores/parses it.
     function updateTitleVersionUI() {
         document.getElementById('diagram-title').value = state.diagramTitle;
-        document.getElementById('diagram-version').value = state.diagramVersion;
+        // An unsaved document has no version yet - show the one it will get.
+        document.getElementById('diagram-version').textContent = ', v' + (state.diagramVersion || 1);
     }
 
     function setDirty(dirty) {
@@ -4128,6 +4361,28 @@
     function hasMultiSelection() {
         return state.selectedDevices.length > 0 || state.selectedZones.length > 0 ||
                state.selectedTextBoxes.length > 0 || state.selectedImages.length > 0;
+    }
+
+    // Fold EVERY single selection into its multi array, before a modifier-click
+    // rewrites the selection.
+    //
+    // Each object type used to promote only its OWN single and then clear the
+    // rest - and clearing is a side effect of selectDevice(null) and friends,
+    // which null selectedTextBox/selectedImage/selectedConnection on the way
+    // past. So a Ctrl/Shift chain that CROSSED types silently dropped the item
+    // it started from: click a pasted image, Ctrl-click a device, and the image
+    // left the selection with nothing said. Same for every other pairing, in
+    // both directions.
+    //
+    // Promoting all five is what "add to the selection" already means to the
+    // user; the multi-drag and batch panel below both handle mixed sets.
+    function promoteSinglesToMulti() {
+        const promote = (single, arr) => { if (single && !arr.includes(single)) arr.push(single); };
+        promote(state.selectedDevice, state.selectedDevices);
+        promote(state.selectedZone, state.selectedZones);
+        promote(state.selectedTextBox, state.selectedTextBoxes);
+        promote(state.selectedImage, state.selectedImages);
+        promote(state.selectedConnection, state.selectedConnections);
     }
 
     // Track double-click manually since mousedown→selectDevice→renderAllDevices
@@ -4318,6 +4573,31 @@
                 return;
             }
 
+            // Check for label drag - slide it along its own route.
+            //
+            // Mirrors annotation dragging deliberately: same hit shape, same
+            // getNearestT projection, same click-vs-drag semantics. A label
+            // that never moved is still just a click that selects the
+            // connection, and double-click-to-edit is untouched because that
+            // runs from handleCanvasDblClick, not from here.
+            //
+            // Without this a label is stuck wherever the route's middle lands,
+            // which is regularly on top of something else and cannot be
+            // rescued - the reason people reach for annotations instead.
+            const lblEl = e.target.closest('.connection-label, .connection-label-bg');
+            if (lblEl) {
+                const lblGroup = lblEl.closest('g[id]');
+                const lblConn = lblGroup ? state.connections.find(c => c.id === lblGroup.id) : null;
+                if (lblConn && lblConn.label) {
+                    preDragSnapshot = snapshotState();
+                    state.draggingLabel = { conn: lblConn, startT: connLabelT(lblConn), moved: false };
+                    clearMultiSelect();
+                    selectZone(null);
+                    selectConnection(lblConn.id);
+                    return;
+                }
+            }
+
             // Check for annotation drag
             const annEl = e.target.closest('.connection-annotation, .connection-annotation-bg');
             if (annEl && annEl.dataset.annId) {
@@ -4427,14 +4707,38 @@
                     // Manual bends are stored as absolute coordinates; when both
                     // endpoints move together the bends must translate too
                     const movedIds = new Set([...state.selectedDevices, ...state.selectedZones]);
+                    // A selected connection with a free-floating end carries its
+                    // own coordinates - nothing else moves them - so snapshot
+                    // those endpoints alongside the node origins. Only when the
+                    // WHOLE connection travels though: a free end is carried, a
+                    // device end only if that device is moving too. Otherwise
+                    // Ctrl-clicking a mixed connection elsewhere on the canvas
+                    // and dragging an unrelated cluster would drag its free end
+                    // away from its own device, silently reshaping it.
+                    const endTravels = (devId, pt) => !!pt || movedIds.has(devId);
+                    const freeConnSel = new Set();
+                    state.selectedConnections.forEach(id => {
+                        const c = state.connections.find(cc => cc.id === id);
+                        if (!c || (!c.fromPoint && !c.toPoint)) return;
+                        if (!endTravels(c.fromDevice, c.fromPoint) ||
+                            !endTravels(c.toDevice, c.toPoint)) return;
+                        freeConnSel.add(c.id);
+                        origins['conn:' + c.id] = {
+                            from: c.fromPoint ? { x: c.fromPoint.x, y: c.fromPoint.y } : null,
+                            to: c.toPoint ? { x: c.toPoint.x, y: c.toPoint.y } : null
+                        };
+                    });
                     const bendShifts = captureBendShifts(conn =>
                         movedIds.has(conn.fromDevice) && movedIds.has(conn.toDevice));
                     // Manual waypoints are absolute too - translate them when
-                    // both endpoints move together, like bends
+                    // both endpoints move together, like bends (or when the
+                    // connection is a selected free-floating one, which moves
+                    // as a whole).
                     const waypointShifts = [];
                     state.connections.forEach(conn => {
                         if (!conn.waypoints || !conn.waypoints.length) return;
-                        if (!movedIds.has(conn.fromDevice) || !movedIds.has(conn.toDevice)) return;
+                        const bothNodesMove = movedIds.has(conn.fromDevice) && movedIds.has(conn.toDevice);
+                        if (!bothNodesMove && !freeConnSel.has(conn.id)) return;
                         waypointShifts.push({ conn, orig: conn.waypoints.map(w => ({ x: w.x, y: w.y })) });
                     });
                     preDragSnapshot = snapshotState();
@@ -4448,9 +4752,7 @@
                 if (device) {
                     preDragSnapshot = snapshotState();
                     if (e.ctrlKey || e.metaKey) {
-                        if (state.selectedDevice && !state.selectedDevices.includes(state.selectedDevice)) {
-                            state.selectedDevices.push(state.selectedDevice);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null);
                         selectDevice(null);
                         selectZone(null);
@@ -4464,9 +4766,7 @@
                         renderAllZones();
                         refreshBatchPanel();
                     } else if (e.shiftKey) {
-                        if (state.selectedDevice && !state.selectedDevices.includes(state.selectedDevice)) {
-                            state.selectedDevices.push(state.selectedDevice);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null);
                         selectDevice(null);
                         selectZone(null);
@@ -4492,9 +4792,7 @@
                 if (img) {
                     preDragSnapshot = snapshotState();
                     if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                        if (state.selectedImage && !state.selectedImages.includes(state.selectedImage)) {
-                            state.selectedImages.push(state.selectedImage);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null); selectDevice(null); selectZone(null); selectTextBox(null); selectImage(null);
                         const idx = state.selectedImages.indexOf(img.id);
                         if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
@@ -4521,9 +4819,7 @@
                 if (tb) {
                     preDragSnapshot = snapshotState();
                     if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                        if (state.selectedTextBox && !state.selectedTextBoxes.includes(state.selectedTextBox)) {
-                            state.selectedTextBoxes.push(state.selectedTextBox);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null); selectDevice(null); selectZone(null); selectTextBox(null); selectImage(null);
                         const idx = state.selectedTextBoxes.indexOf(tb.id);
                         if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
@@ -4552,9 +4848,7 @@
                 if (zone) {
                     preDragSnapshot = snapshotState();
                     if (e.ctrlKey || e.metaKey) {
-                        if (state.selectedZone && !state.selectedZones.includes(state.selectedZone)) {
-                            state.selectedZones.push(state.selectedZone);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null);
                         selectDevice(null);
                         selectZone(null);
@@ -4568,9 +4862,7 @@
                         renderAllZones();
                         refreshBatchPanel();
                     } else if (e.shiftKey) {
-                        if (state.selectedZone && !state.selectedZones.includes(state.selectedZone)) {
-                            state.selectedZones.push(state.selectedZone);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null);
                         selectDevice(null);
                         selectZone(null);
@@ -4596,9 +4888,7 @@
                 if (connEl) {
                     const cid = connEl.dataset.connId;
                     if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                        if (state.selectedConnection && !state.selectedConnections.includes(state.selectedConnection)) {
-                            state.selectedConnections.push(state.selectedConnection);
-                        }
+                        promoteSinglesToMulti();
                         selectConnection(null); selectDevice(null); selectZone(null); selectTextBox(null); selectImage(null);
                         const idx = state.selectedConnections.indexOf(cid);
                         if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
@@ -4631,6 +4921,47 @@
                 const apIndex = parseInt(apEl.dataset.apIndex);
                 state.connecting = { fromDevice: deviceId, fromAP: apIndex };
                 return;
+            }
+
+            // Ctrl (Cmd) held = MOVE this object, do not start a connection.
+            //
+            // Body-drag-to-connect is the draw.io behaviour and it is what the
+            // tool is for, but it costs you the other reflex: aiming at the
+            // middle of a node to reposition it draws a line from the nearest
+            // AP instead. Rather than force a trip back to the select tool for
+            // one nudge, Ctrl suspends the connect tool for the length of one
+            // drag. Same key as the connection-drop override, and the same
+            // meaning both times - "not the connection interpretation".
+            //
+            // Deliberately not Alt: Alt already means finer grid and no
+            // alignment guides WHILE dragging, and this needs to compose with
+            // that (Ctrl to grab, Alt to place precisely).
+            if (e.ctrlKey || e.metaKey) {
+                const moveEl = e.target.closest('.device-node, .image-node, .textbox-node, .zone-node');
+                if (moveEl) {
+                    const dev = state.devices.find(d => d.id === moveEl.id);
+                    const zone = !dev ? state.zones.find(z => z.id === moveEl.id) : null;
+                    const img = !dev && !zone ? state.images.find(i => i.id === moveEl.id) : null;
+                    const tb = !dev && !zone && !img ? state.textBoxes.find(t => t.id === moveEl.id) : null;
+                    const obj = dev || zone || img || tb;
+                    if (obj) {
+                        preDragSnapshot = snapshotState();
+                        clearMultiSelect();
+                        // Select through the same helpers the select tool uses,
+                        // so the property panel follows and nothing is left
+                        // half-selected behind the connection panel.
+                        if (dev) { selectZone(null); selectDevice(dev.id); }
+                        else if (zone) { selectDevice(null); selectZone(zone.id); }
+                        else if (img) { selectImage(img.id); }
+                        else { selectDevice(null); selectZone(null); selectTextBox(tb.id); }
+                        state.dragging = {
+                            device: dev || undefined, zone: zone || undefined,
+                            image: img || undefined, textBox: tb || undefined,
+                            offsetX: point.x - obj.x, offsetY: point.y - obj.y
+                        };
+                        return;
+                    }
+                }
             }
 
             // DRAGGING from a device/zone BODY starts a connection from its
@@ -4710,9 +5041,15 @@
             const dy = point.y - ri.startY;
             const delta = Math.max(dx, dy);
             const newW = Math.max(GRID_SIZE * 2, snapToGrid(ri.origW + delta, fineStep));
+            const newH = Math.max(GRID_SIZE * 2, snapToGrid(newW / ri.aspect, fineStep));
             const iw0 = ri.image.w, ih0 = ri.image.h;
-            ri.image.w = newW;
-            ri.image.h = Math.max(GRID_SIZE * 2, snapToGrid(newW / ri.aspect, fineStep));
+            // Aspect-locked corner: guide the width edge only, height follows
+            // the ratio (guiding both would fight the lock).
+            const iadj = guideAdjustResize(e, ri.image.id,
+                { x: ri.image.x, y: ri.image.y, w: newW, h: newH }, 'r', GRID_SIZE * 2);
+            ri.image.w = iadj.w;
+            ri.image.h = iadj.w === newW ? newH
+                : Math.max(GRID_SIZE * 2, Math.round(iadj.w / ri.aspect));
             if (ri.image.attachmentPoints) redistributeAPs(ri.image, iw0, ih0);
             renderImage(ri.image);
             rerouteConnectionsForDevice(ri.image.id);
@@ -4764,6 +5101,16 @@
                     rz.zone.h = bottom - newY;
                 }
             }
+            // Alignment guides on the moving edge(s): the reason you resize a
+            // zone is usually to line it up with another one. Shift-
+            // proportional skips them (a snap would fight the locked ratio).
+            if (axis === 'both' && e.shiftKey) {
+                clearGuideLines();
+            } else {
+                const adj = guideAdjustResize(e, rz.zone.id,
+                    { x: rz.zone.x, y: rz.zone.y, w: rz.zone.w, h: rz.zone.h }, axis, minSize);
+                rz.zone.x = adj.x; rz.zone.y = adj.y; rz.zone.w = adj.w; rz.zone.h = adj.h;
+            }
             if (rz.zone.attachmentPoints) {
                 redistributeAPs(rz.zone, zw0, zh0);
             }
@@ -4788,6 +5135,19 @@
                 tempLine.setAttribute('y2', point.y);
             }
             return;
+        }
+
+        if (state.draggingLabel) {
+            const dl = state.draggingLabel;
+            const start = resolveConnEndpoint(dl.conn, 'from');
+            const end = resolveConnEndpoint(dl.conn, 'to');
+            if (start && end) {
+                const cPoints = connRoutePoints(dl.conn, start, end);
+                const nearest = getNearestT(cPoints, point.x, point.y);
+                dl.conn.labelT = Math.max(0.02, Math.min(0.98, nearest.t));
+                dl.moved = true;
+                renderConnection(dl.conn);
+            }
         }
 
         if (state.draggingAnnotation) {
@@ -4853,6 +5213,14 @@
                     rd.device.h = bottom - newY;
                 }
             }
+            // Alignment guides on the moving edge(s) - same rules as zones.
+            if (axis === 'both' && e.shiftKey) {
+                clearGuideLines();
+            } else {
+                const adj = guideAdjustResize(e, rd.device.id,
+                    { x: rd.device.x, y: rd.device.y, w: rd.device.w, h: rd.device.h }, axis, minSize);
+                rd.device.x = adj.x; rd.device.y = adj.y; rd.device.w = adj.w; rd.device.h = adj.h;
+            }
             redistributeAPs(rd.device, dw0, dh0);
             renderDevice(rd.device);
             state.connections
@@ -4909,15 +5277,29 @@
                         moveNodeElement(img);
                     }
                 });
+                // Free-floating endpoints move with the same snapped delta -
+                // nothing else carries them, since they are anchored to no node.
+                const freeMoved = [];
+                state.selectedConnections.forEach(id => {
+                    const o = state.dragging.origins['conn:' + id];
+                    if (!o) return;
+                    const c = state.connections.find(cc => cc.id === id);
+                    if (!c) return;
+                    if (o.from && c.fromPoint) { c.fromPoint.x = o.from.x + dx; c.fromPoint.y = o.from.y + dy; }
+                    if (o.to && c.toPoint) { c.toPoint.x = o.to.x + dx; c.toPoint.y = o.to.y + dy; }
+                    freeMoved.push(c);
+                });
                 // Delta already snapped - shift bends/waypoints by it raw, so
                 // their sub-grid positions ride along untouched.
                 applyBendShifts(state.dragging.bendShifts || [], dx, dy, null);
                 (state.dragging.waypointShifts || []).forEach(ws => {
                     ws.conn.waypoints = ws.orig.map(w => ({ x: w.x + dx, y: w.y + dy }));
                 });
+                const rendered = new Set();
                 state.connections
                     .filter(c => affectedIds.has(c.fromDevice) || affectedIds.has(c.toDevice))
-                    .forEach(renderConnection);
+                    .forEach(c => { rendered.add(c.id); renderConnection(c); });
+                freeMoved.forEach(c => { if (!rendered.has(c.id)) renderConnection(c); });
                 updateGroupOutlines();   // keep group outlines tracking the drag
             } else if (state.dragging.zone) {
                 const zone = state.dragging.zone;
@@ -5020,11 +5402,22 @@
                 });
             }
 
-            // A connection is included when both its endpoint devices are in the
-            // marquee, so dragging over a cluster grabs its internal links too.
+            // A connection is included when BOTH its ends are captured, so
+            // dragging over a cluster grabs its internal links too. An end is
+            // captured when its device is in the marquee, or - for a
+            // free-floating end (fromPoint/toPoint, no device) - when the point
+            // itself is inside the marquee. Free connections are first-class:
+            // imports use them for route arrows and hand-drawn keys/legends, and
+            // requiring a device at both ends made those unselectable, so they
+            // silently stayed behind when a region was moved.
             const devSet = new Set(deviceHits);
+            const endCaptured = (devId, pt) => devId
+                ? devSet.has(devId)
+                : !!pt && pt.x >= selRect.left && pt.x <= selRect.right &&
+                          pt.y >= selRect.top && pt.y <= selRect.bottom;
             const connHits = (tierBlocked('connections') ? [] : state.connections).filter(c =>
-                c.fromDevice && c.toDevice && devSet.has(c.fromDevice) && devSet.has(c.toDevice)
+                (c.fromDevice || c.fromPoint) && (c.toDevice || c.toPoint) &&
+                endCaptured(c.fromDevice, c.fromPoint) && endCaptured(c.toDevice, c.toPoint)
             ).map(c => c.id);
 
             state.selectedDevices = deviceHits;
@@ -5110,13 +5503,31 @@
                 const otherAP = de.end === 'from' ? conn.toAP : conn.fromAP;
                 // Don't allow both endpoints on the same AP
                 if (!(devId === otherDevice && apIdx === otherAP)) {
+                    // Capture the path as the user shaped it BEFORE the
+                    // endpoint moves - the re-fit target. This used to be
+                    // `delete conn.bends`, which threw the shape away on
+                    // every endpoint move, including the one-notch nudge to
+                    // an adjacent AP where the shape is obviously still what
+                    // the user wants. Waypoints (imported routes) fold into
+                    // the same capture: they were deleted here anyway, so
+                    // re-expressing them as fitted bends preserves strictly
+                    // more than the old behaviour did.
+                    const hadShape = (conn.bends && Object.keys(conn.bends).length) ||
+                                     (conn.waypoints && conn.waypoints.length);
+                    let oldPts = null;
+                    if (hadShape) {
+                        const os = resolveConnEndpoint(conn, 'from');
+                        const oe = resolveConnEndpoint(conn, 'to');
+                        if (os && oe) oldPts = connRoutePoints(conn, os, oe).map(p => ({ x: p.x, y: p.y }));
+                    }
                     if (de.end === 'from') {
                         conn.fromDevice = devId; conn.fromAP = apIdx; conn.fromPoint = null;
                     } else {
                         conn.toDevice = devId; conn.toAP = apIdx; conn.toPoint = null;
                     }
-                    delete conn.bends; // manual bends/waypoints were placed for the old geometry
                     delete conn.waypoints;
+                    if (oldPts) refitBendsToPath(conn, oldPts);
+                    else delete conn.bends;
                     renderConnection(conn);
                 }
             } else {
@@ -5138,6 +5549,23 @@
             return;
         }
 
+        if (state.draggingLabel) {
+            const dl = state.draggingLabel;
+            state.draggingLabel = null;
+            if (!dl.moved) {
+                // A click, not a drag. Nothing changed, so leave no undo step.
+                preDragSnapshot = null;
+                return;
+            }
+            // Dropped back on centre: drop the field rather than store a value
+            // that means "the default". Keeps a board that was only fiddled
+            // with byte-identical to one that was never touched.
+            if (Math.abs(dl.conn.labelT - 0.5) < LABEL_T_EPS) delete dl.conn.labelT;
+            renderConnection(dl.conn);
+            commitPreDragUndo();
+            return;
+        }
+
         if (state.draggingAnnotation) {
             commitPreDragUndo();
             state.draggingAnnotation = null;
@@ -5145,10 +5573,10 @@
         }
         if (state.dragging || state.resizingZone || state.resizingDevice || state.resizingImage) {
             commitPreDragUndo();
+            clearGuideLines();   // moves AND resizes draw guide lines now
         }
         if (state.dragging) {
             state.dragging = null;
-            clearGuideLines();
             updateCanvasSize();
         }
         if (state.resizingZone) {
@@ -5194,11 +5622,25 @@
 
             const apEl = e.target.closest('.attachment-point');
 
+            // Ctrl/Cmd held at the drop means "land here, attach to nothing" -
+            // the end stays a free point even directly over a node. Without it,
+            // an unplugged-cable stub cannot be drawn onto a device that sits
+            // inside a zone: the zone body is under the cursor, so the drop
+            // always snapped to the zone's nearest attachment point.
+            //
+            // Not Alt: Alt already means finer grid AND no alignment guides
+            // (snapStepFor / alignment guides), so someone holding it to place a
+            // free end precisely would silently lose the ability to attach at
+            // all. Ctrl/Cmd has no meaning at connect-drop, so it is additive.
+            const noSnap = e.ctrlKey || e.metaKey;
+
             // Resolve the "to" end: an attachment point under the cursor, else a
             // node body (snap to its nearest AP, so drops don't have to land on
             // the small dots), else a free-floating point in empty space.
             let toDevice = null, toAP = null, toPoint = null;
-            if (apEl) {
+            if (noSnap) {
+                toPoint = { x: snapToGrid(point.x, fineStep), y: snapToGrid(point.y, fineStep) };
+            } else if (apEl) {
                 toDevice = apEl.dataset.deviceId;
                 toAP = parseInt(apEl.dataset.apIndex);
             } else {
@@ -5289,11 +5731,7 @@
     // current multi-selection (Shift-click); otherwise it replaces it.
     function selectGroupMembers(group, additive) {
         if (additive) {
-            // Fold any singular selection into the multi arrays first
-            if (state.selectedDevice && !state.selectedDevices.includes(state.selectedDevice)) state.selectedDevices.push(state.selectedDevice);
-            if (state.selectedZone && !state.selectedZones.includes(state.selectedZone)) state.selectedZones.push(state.selectedZone);
-            if (state.selectedTextBox && !state.selectedTextBoxes.includes(state.selectedTextBox)) state.selectedTextBoxes.push(state.selectedTextBox);
-            if (state.selectedImage && !state.selectedImages.includes(state.selectedImage)) state.selectedImages.push(state.selectedImage);
+            promoteSinglesToMulti();   // incl. a singly-selected connection, which this missed
         } else {
             state.selectedDevices = [];
             state.selectedZones = [];
@@ -6043,6 +6481,80 @@
     // up front, Firefox as a row above its panel. Zero dependencies; the
     // set is the active theme's palette plus a derived light/dark pair of
     // the tint and the two staples.
+    // --- Recent colors -------------------------------------------------------
+    // The theme palette covers the colours the app suggests. This covers the
+    // ones the USER chose, which is the harder problem: a picker reproduces
+    // gamut EDGES by gesture - drag saturation hard right, grab the corner, and
+    // #ff0000 comes out every time - but an interior colour like a particular
+    // orange has nothing to snap to and cannot be hit twice by hand. Once a
+    // colour is in the datalist it is one click away in every colour control.
+    //
+    // Deliberately NOT persisted across documents. A colour worth keeping
+    // forever belongs in a custom theme, which is already the supported route
+    // and applies to everyone opening the app from that host.
+    const RECENT_COLORS_MAX = 12;
+    let recentColors = [];
+
+    const isHexColor = (v) => typeof v === 'string' && v.length <= 9 && /^#[0-9a-fA-F]{3,8}$/.test(v);
+
+    // Normalize so #ABC, #aabbcc and #AABBCC are one entry rather than three.
+    function canonHex(v) {
+        let h = String(v).slice(1);
+        if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        return '#' + h.toLowerCase();
+    }
+
+    function noteRecentColor(v) {
+        if (!isHexColor(v)) return;
+        const c = canonHex(v);
+        const i = recentColors.indexOf(c);
+        if (i >= 0) recentColors.splice(i, 1);
+        recentColors.unshift(c);
+        if (recentColors.length > RECENT_COLORS_MAX) recentColors.length = RECENT_COLORS_MAX;
+        refreshThemeSwatches();
+    }
+
+    // Seed from the document itself, so OPENING a diagram immediately offers the
+    // colours already in it - the common case being "another connection the same
+    // orange as that one". Walks the object arrays rather than stringifying
+    // state: devices carry inline image data URIs and a stringify would copy
+    // megabytes to find a handful of hex strings. Shape-agnostic within those
+    // arrays, so a colour field added later is picked up with no change here.
+    function collectDocumentColors() {
+        const counts = new Map();
+        const scan = (obj) => {
+            if (!obj || typeof obj !== 'object') return;
+            for (const k in obj) {
+                if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+                const v = obj[k];
+                if (isHexColor(v)) {
+                    const c = canonHex(v);
+                    counts.set(c, (counts.get(c) || 0) + 1);
+                } else if (Array.isArray(v)) {
+                    v.forEach(scan);   // connection spans carry per-run colours
+                }
+            }
+        };
+        [state.devices, state.connections, state.zones, state.textBoxes, state.images]
+            .forEach(arr => (arr || []).forEach(scan));
+        // Most-used first: the diagram's dominant colours are the ones most
+        // likely to be wanted again.
+        return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+    }
+
+    function seedRecentColorsFromDocument() {
+        recentColors = collectDocumentColors().slice(0, RECENT_COLORS_MAX);
+        refreshThemeSwatches();
+    }
+
+    // One delegated listener rather than 22 bindings: catches every colour input
+    // that exists now or is added later. `change` not `input`, so dragging
+    // around a picker records only what was actually committed.
+    document.addEventListener('change', (e) => {
+        const t = e.target;
+        if (t && t.tagName === 'INPUT' && t.type === 'color') noteRecentColor(t.value);
+    });
+
     function refreshThemeSwatches() {
         const dl = document.getElementById('theme-swatches');
         if (!dl) return;
@@ -6068,7 +6580,14 @@
             '#ffffff', '#333333'
         ].filter(Boolean);
         dl.innerHTML = '';
-        [...new Set(set.map(c => String(c).toLowerCase()))].forEach(c => {
+        // Theme palette FIRST, then the user's recents: the picker renders these
+        // in order, so the colours the app suggests keep the leading positions
+        // and recents extend the grid rather than displacing anything.
+        const seen = new Set();
+        const norm = (c) => (isHexColor(c) ? canonHex(c) : String(c).toLowerCase());
+        [...set.map(norm), ...recentColors].forEach(c => {
+            if (seen.has(c)) return;
+            seen.add(c);
             const o = document.createElement('option');
             o.value = c;
             dl.appendChild(o);
@@ -6120,6 +6639,10 @@
     // demo-link path and any headless caller are unchanged). The interactive
     // Bulk Actions button and batch convert pass a subset so a user can keep,
     // say, link-speed color coding or hand-tuned zone colors (recolorScopeDialog).
+    // opts.silent: skip the undo snapshot and dirty flag. For read-only
+    // embedders (the kiosk rotates themes on a timer) where there is no user
+    // to undo for and nothing is ever saved - snapshotting a whole board every
+    // few minutes is pure churn on a low-powered wall display.
     function recolorAllToTheme(opts) {
         opts = opts || {};
         const doDev = opts.devices !== false, doZone = opts.zones !== false;
@@ -6127,7 +6650,7 @@
         if (!doDev && !doZone && !doConn && !doText) return;
         if (!state.devices.length && !state.zones.length &&
             !state.connections.length && !state.textBoxes.length) return;
-        pushUndo();
+        if (!opts.silent) pushUndo();
         if (doDev) {
             const tint = DEFAULT_DEVICE_TINT;   // null = the theme's untinted look
             state.devices.forEach(d => {
@@ -6164,7 +6687,7 @@
         renderAllDevices();   // also re-renders text boxes (shared device layer)
         renderAllZones();
         renderAllConnections();
-        setDirty(true);
+        if (!opts.silent) setDirty(true);
     }
 
     // The per-kind opt-out picker shared by the Bulk Actions button and batch
@@ -7482,14 +8005,39 @@
         const zoneIds = new Set(state.selectedZones); if (state.selectedZone) zoneIds.add(state.selectedZone);
         const tbIds = new Set(state.selectedTextBoxes); if (state.selectedTextBox) tbIds.add(state.selectedTextBox);
         const imgIds = new Set(state.selectedImages); if (state.selectedImage) imgIds.add(state.selectedImage);
-        if (!devIds.size && !zoneIds.size && !tbIds.size && !imgIds.size) return false;
+        // Selected connections with a free-floating end move on their own -
+        // no node carries them - so a selection of ONLY those is still a
+        // nudgeable selection.
+        const connIds = new Set(state.selectedConnections);
+        if (state.selectedConnection) connIds.add(state.selectedConnection);
+        // Same rule as the drag path: only nudge a connection whose WHOLE
+        // geometry travels. A fully free-floating one does (both ends are
+        // ours); a mixed one only when its device end is moving too, otherwise
+        // arrow keys would stretch the free end away from its anchor and
+        // distort the line rather than move it.
+        const nudgedNodes = new Set([...devIds, ...zoneIds]);
+        const endTravels = (devId, pt) => !!pt || nudgedNodes.has(devId);
+        const freeConns = [...connIds]
+            .map(id => state.connections.find(c => c.id === id))
+            .filter(c => c && (c.fromPoint || c.toPoint) &&
+                         endTravels(c.fromDevice, c.fromPoint) &&
+                         endTravels(c.toDevice, c.toPoint));
+        if (!devIds.size && !zoneIds.size && !tbIds.size && !imgIds.size && !freeConns.length) return false;
         pushUndoDebounced();
         const affected = new Set();
         devIds.forEach(id => { const d = state.devices.find(x => x.id === id); if (d) { d.x += dx; d.y += dy; affected.add(id); renderDevice(d); } });
         zoneIds.forEach(id => { const z = state.zones.find(x => x.id === id); if (z) { z.x += dx; z.y += dy; affected.add(id); renderZone(z); } });
         tbIds.forEach(id => { const t = state.textBoxes.find(x => x.id === id); if (t) { t.x += dx; t.y += dy; renderTextBox(t); } });
         imgIds.forEach(id => { const im = state.images.find(x => x.id === id); if (im) { im.x += dx; im.y += dy; affected.add(id); renderImage(im); } });
-        state.connections.filter(c => affected.has(c.fromDevice) || affected.has(c.toDevice)).forEach(renderConnection);
+        freeConns.forEach(c => {
+            if (c.fromPoint) { c.fromPoint.x += dx; c.fromPoint.y += dy; }
+            if (c.toPoint) { c.toPoint.x += dx; c.toPoint.y += dy; }
+            if (c.waypoints) c.waypoints.forEach(w => { w.x += dx; w.y += dy; });
+        });
+        const nudged = new Set();
+        state.connections.filter(c => affected.has(c.fromDevice) || affected.has(c.toDevice))
+            .forEach(c => { nudged.add(c.id); renderConnection(c); });
+        freeConns.forEach(c => { if (!nudged.has(c.id)) renderConnection(c); });
         updateCanvasSize();
         return true;
     }
@@ -8218,8 +8766,28 @@
         conn(sw, 4, web, 0);
         conn(sw, 3, ws, 0);
 
+        // Hidden inventory data. Device Details fields are never drawn on the
+        // canvas - they surface in the details panel, the inventory CSV export
+        // and Ctrl+F - so the sample keeps human-readable role labels while
+        // carrying the addresses a monitoring tool needs. That split is the
+        // point, and it is worth noticing twice over:
+        //   - it is how the suite joins up. This board says "Core Switch"; the
+        //     PingCanvas wall and SNMPCanvas match on 10.20.0.2 and call it
+        //     core-sw. Export inventory here, import it there, done.
+        //   - it sanitizes. A diagram of a sensitive estate can be screen-
+        //     shared with a vendor showing nothing but roles, while the real
+        //     names and addresses stay in fields nobody on the call sees.
+        [
+            [fw,     'edge-fw',  '10.20.0.1'],
+            [sw,     'core-sw',  '10.20.0.2'],
+            [router, 'core-rtr', '10.20.0.3'],
+            [web,    'web-01',   '10.20.10.11'],
+            [db,     'db-01',    '10.20.10.16'],
+            [ws,     'ws-01',    '10.20.20.51']
+            // 'Internet' is deliberately left blank - it is not a device you poll.
+        ].forEach(([d, host, ip]) => { d.fields = { Hostname: host, 'IP-Address': ip }; });
         state.diagramTitle = 'network-diagram';
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         setDirty(false);
         undoStack.length = 0;
         redoStack.length = 0;
@@ -8330,6 +8898,11 @@
         const nacserver = dev('Fingerprint', 'NAC Server', 240, 855);
         const monitoringserver = dev('Statistics', 'Monitoring Server', 340, 855);
         const virtualizationcluster = dev('ServerCluster', 'Virtualization Cluster', 180, 970, 150, 75);
+        // Rack UPS: no network link drawn, which is how most people diagram one -
+        // it is on the power side of the picture. It still carries an address,
+        // because a managed UPS is one of the more useful things to monitor and
+        // the suite's demo leans on it (battery, runtime, on-mains/on-battery).
+        const rackups = dev('UPS', 'Rack UPS', 350, 970);
         const accessswitch = dev('Switch', 'Access Switch', 500, 692);
         const financews = dev('Client', 'Finance WS', 470, 770, 50);
         const printer = dev('Printer', 'Printer', 580, 770, 50);
@@ -8407,8 +8980,64 @@
             ]
         });
 
+        // Hidden inventory data. Device Details fields are never drawn on the
+        // canvas - they surface in the details panel, the inventory CSV export
+        // and Ctrl+F - so the sample keeps human-readable role labels while
+        // carrying the addresses a monitoring tool needs. That split is the
+        // point, and it is worth noticing twice over:
+        //   - it is how the suite joins up. This board says "Core Switch"; the
+        //     PingCanvas wall and SNMPCanvas match on 10.20.0.2 and call it
+        //     core-sw. Export inventory here, import it there, done.
+        //   - it sanitizes. A diagram of a sensitive estate can be screen-
+        //     shared with a vendor showing nothing but roles, while the real
+        //     names and addresses stay in fields nobody on the call sees.
+        // 10.20.0.x HQ core | .10.x HQ servers | .20.x HQ users
+        // 10.20.21.x Branch 1 retail | .22.x Branch 2 warehouse | .30.x cloud VPC
+        [
+            [edgefirewall,          'edge-fw',       '10.20.0.1'],
+            [coreswitch,            'core-sw',       '10.20.0.2'],
+            [idsips,                'ids-01',        '10.20.0.5'],
+            [wirelesscontroller,    'wlc-01',        '10.20.0.6'],
+            [accessswitch,          'acc-sw-01',     '10.20.0.10'],
+
+            [webserver,             'intranet-01',   '10.20.10.11'],
+            [erpserver,             'erp-01',        '10.20.10.12'],
+            [directoryserver,       'dc-01',         '10.20.10.13'],
+            [nacserver,             'nac-01',        '10.20.10.14'],
+            [monitoringserver,      'mon-01',        '10.20.10.15'],
+            [backupnas,             'nas-01',        '10.20.10.20'],
+            [virtualizationcluster, 'vhost-cluster', '10.20.10.30'],
+            [rackups,               'ups-01',        '10.20.10.44'],
+
+            [wifiap,                'ap-hq-01',      '10.20.20.10'],
+            [financews,             'fin-ws-01',     '10.20.20.51'],
+            [laptop,                'lt-042',        '10.20.20.52'],
+            [printer,               'prnt-01',        '10.20.20.60'],
+            [voipphone,             'voip-118',      '10.20.20.70'],
+            [poecamera,             'cam-hq-01',     '10.20.20.80'],
+
+            [branch1router,         'br1-rtr',       '10.20.21.1'],
+            [switchDev,             'pos-sw',        '10.20.21.2'],
+            [posterminal,           'pos-term-01',   '10.20.21.50'],
+            [camera,                'cam-br1-01',    '10.20.21.80'],
+
+            [branch2router,         'br2-rtr',       '10.20.22.1'],
+            [switchDev2,            'br2-sw',        '10.20.22.2'],
+            [satmodem,              'sat-modem',     '10.20.22.3'],
+            [wifiap2,               'wh-ap',         '10.20.22.10'],
+            [conveyor,              'plc-conv-01',   '10.20.22.40'],
+            [labelprinter,          'label-printer', '10.20.22.60'],
+
+            [loadbalancer,          'lb-01',         '10.20.30.10'],
+            [appvm1,                'web-01',        '10.20.30.11'],
+            [appvm2,                'web-02',        '10.20.30.12'],
+            [objectstorage,         'obj-store',     '10.20.30.20'],
+            [mgmtjumpbox,           'jump-01',       '10.20.30.30']
+            // Internet, Remote Staff and Satellite are deliberately blank:
+            // a cloud, a roaming person and a bird are not things you poll.
+        ].forEach(([d, host, ip]) => { d.fields = { Hostname: host, 'IP-Address': ip }; });
         state.diagramTitle = 'acme-global-network';
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         setDirty(false);
         undoStack.length = 0;
         redoStack.length = 0;
@@ -8429,7 +9058,8 @@
         resetDocumentState();
         state.nextId = 1;
         state.diagramTitle = 'network-diagram';
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
+        seedRecentColorsFromDocument();   // empty document, so: no recents
         setDirty(false);
         clearAutosave();
         undoStack.length = 0;
@@ -8446,11 +9076,14 @@
     function applyChosenFileName(fileName) {
         if (!fileName) return;
         let base = fileName.replace(/\.(xcanvas|netdraw|json)$/i, '');
+        // A trailing "_v3" from the era when the version rode in the filename is
+        // stripped from the TITLE, but no longer adopted as the version: the
+        // file's own diagramVersion is authoritative on open, and on save the
+        // counter is ours. Adopting it meant that picking an existing
+        // "core_v3.xcanvas" in the Save dialog silently rewound a v12 diagram to
+        // v3 and pinned it there for every later save.
         const m = base.match(/^(.*)_v(\d+)$/);
-        if (m) {
-            base = m[1];
-            state.diagramVersion = Math.max(1, parseInt(m[2], 10));
-        }
+        if (m) base = m[1];
         if (base) state.diagramTitle = base;
     }
 
@@ -8463,49 +9096,56 @@
         // archival save (library icons embedded instead of referenced by name).
         const buildJson = () => JSON.stringify(serializeDiagram(embedImages), null, 2);
 
-        // A "board" (PingCanvas board, whiteboard, etc.) wants a STABLE filename -
-        // the kiosk + status feed reference it by name - so skip the auto-version
-        // suffix when the title is about a board: the standalone word or a known
-        // compound. A bare substring test disabled versioning for "Keyboard
-        // Matrix" / "Onboarding" / "Billboard" - 'board' the syllable, not the
-        // thing you pin to a wall.
-        const isBoard = /(?:^|[\s_-])(?:white|dash|noc|status|wall)?boards?(?:$|[\s_.-])/i.test(state.diagramTitle || '');
-        const suggestedName = sanitizedTitle() +
-            (isBoard ? '' : ('_v' + state.diagramVersion)) + '.xcanvas';
+        // The filename is just the title - the version lives INSIDE the file
+        // (diagramVersion) and in the header display, Gliffy-style. Suffixing
+        // "_v3" here made every save propose a brand-new filename, so a shared
+        // folder sprawled with near-duplicates instead of one canonical file
+        // per diagram that each save overwrites.
+        const suggestedName = sanitizedTitle() + '.xcanvas';
 
-        let saved = false;
+        let handle = null;
         if (window.showSaveFilePicker) {
             try {
-                const handle = await window.showSaveFilePicker({
+                handle = await window.showSaveFilePicker({
                     suggestedName: suggestedName,
                     types: [{
                         description: 'CrossCanvas Diagram',
                         accept: { 'application/json': ['.xcanvas'] }
                     }]
                 });
-                // Sync the in-app title/version to the name the user picked, then
-                // write so the embedded title matches the file on disk.
-                applyChosenFileName(handle.name);
-                const writable = await handle.createWritable();
-                await writable.write(buildJson());
-                await writable.close();
-                saved = true;
             } catch (err) {
+                // Cancelled: nothing was written, so nothing changes - not even
+                // the version.
                 if (err.name === 'AbortError') return;
             }
         }
 
+        // Committed to writing from here. Sync the title to the name the user
+        // picked, then bump the version BEFORE serializing: the number names the
+        // file we are about to write. Post-incrementing left the header claiming
+        // a version no file had (save, header jumps to v2; reopen that file and
+        // it reads v1 again).
+        if (handle) applyChosenFileName(handle.name);
+        state.diagramVersion++;
+
+        let saved = false;
+        if (handle) {
+            try {
+                const writable = await handle.createWritable();
+                await writable.write(buildJson());
+                await writable.close();
+                saved = true;
+            } catch (err) { /* write failed - fall back to a download below */ }
+        }
         if (!saved) {
-            triggerDownload(new Blob([buildJson()], { type: 'application/json' }), suggestedName);
+            // Recomputed, not the pre-picker suggestion: the title may have just
+            // changed, and the download should carry the name we actually saved as.
+            triggerDownload(new Blob([buildJson()], { type: 'application/json' }), sanitizedTitle() + '.xcanvas');
         }
 
         setDirty(false);
         clearAutosave();
-        // Record the saved state (slim form regardless of embed choice),
-        // before the version auto-increments so the snapshot matches the file
         recordRecent();
-        // Auto-increment version after each save
-        state.diagramVersion++;
         updateTitleVersionUI();
     }
 
@@ -9130,7 +9770,7 @@
         const fileTitle = fileName ? fileName.replace(/\.gliffy$/i, '') : null;
         const title = (metaTitle && metaTitle !== 'untitled') ? metaTitle : (fileTitle || 'gliffy-import');
         state.diagramTitle = title;
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         // Waypoint routes that fit the native rails become real bent
         // connections (needs the new nodes in state so endpoints resolve)
         state.connections.forEach(convertWaypointsToBends);
@@ -10353,7 +10993,7 @@
         state.textBoxes = newTextBoxes;
         state.images = newImages;
         state.diagramTitle = (file.name || 'visio-import').replace(/\.(vsdx|vsdm)$/i, '');
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         // Routed paths that fit the native rails become real bent connections
         // (needs the new nodes in state so endpoints resolve)
         state.connections.forEach(convertWaypointsToBends);
@@ -10398,6 +11038,71 @@
                 throw new Error('invalid diagram file: "' + k + '" is not a list');
             }
         });
+
+        // The shape check above catches a non-array `devices`, but not a bad
+        // ELEMENT - a null in the array, spans:5, a missing attachmentPoints -
+        // which passes here, gets swapped into state, then throws during
+        // migration or render, leaving the editor showing half the old diagram
+        // and half nothing with no way back. Snapshot the current document and
+        // roll back on any throw so a malformed file is a clean no-op the
+        // caller can alert on, with the open diagram intact.
+        const _rollback = snapshotState();
+        try {
+            applyDiagramDataUnsafe(data);
+        } catch (err) {
+            try { restoreSnapshot(_rollback); } catch (_) { /* the snapshot was valid; best effort */ }
+            throw err;
+        }
+        // Only after the load is known good: a rolled-back file must not leave
+        // its colours behind in the picker.
+        seedRecentColorsFromDocument();
+    }
+
+    // The body of applyDiagramData, split out so the public entry can wrap it
+    // in a snapshot/rollback. Never call this directly - it mutates state
+    // before it can know the whole file is well-formed.
+    function applyDiagramDataUnsafe(data) {
+
+        // Object ids become DOM ids at render, and getElementById is global, so
+        // a file with an object id like "canvas-bg" (or any panel/control id)
+        // would SHADOW real app chrome - fitToView would then re-anchor a device
+        // instead of the background, ?bg= would paint the wrong element, and so
+        // on. We keep the id-equals-DOM-id contract (the kiosk overlay reads
+        // g.id) and instead re-mint just the offenders, cascading references.
+        // Reserved = every id in the live DOM that is NOT an object-layer node
+        // (those belong to the outgoing doc and are about to be cleared), so the
+        // set stays correct as chrome evolves without a hand-maintained list.
+        const reservedIds = new Set();
+        document.querySelectorAll('[id]').forEach(el => {
+            if (!el.closest('#devices-layer, #zones-layer, #connections-layer, #images-layer, #overlay-layer, #status-overlay')) {
+                reservedIds.add(el.id);
+            }
+        });
+        if (reservedIds.size) {
+            let n = 0;
+            const idRemap = {};
+            const remap = (o) => {
+                if (o && o.id != null && reservedIds.has(String(o.id))) {
+                    const fresh = 'x' + (n++) + '-' + o.id;   // unique, and no chrome id starts with "x<n>-"
+                    idRemap[o.id] = fresh;
+                    o.id = fresh;
+                }
+            };
+            (data.devices || []).forEach(remap);
+            (data.zones || []).forEach(remap);
+            (data.images || []).forEach(remap);
+            (data.textBoxes || []).forEach(remap);
+            (data.connections || []).forEach(remap);
+            if (Object.keys(idRemap).length) {
+                (data.connections || []).forEach(c => {
+                    if (c && idRemap[c.fromDevice]) c.fromDevice = idRemap[c.fromDevice];
+                    if (c && idRemap[c.toDevice]) c.toDevice = idRemap[c.toDevice];
+                });
+                (data.groups || []).forEach(g => {
+                    if (g && Array.isArray(g.members)) g.members = g.members.map(m => idRemap[m] || m);
+                });
+            }
+        }
 
         // Resolve slimmed image references (v6+): '#key' → imageTable,
         // '@name' → the stencil library loaded at startup (bundled templates
@@ -10522,6 +11227,7 @@
         undoStack.push(json);
         if (undoStack.length > MAX_UNDO) undoStack.shift();
         redoStack.length = 0;
+        gcSnapshotIntern();
         updateUndoRedoButtons();
         setDirty(true);
     }
@@ -11207,7 +11913,7 @@
         const fileTitle = fileName ? fileName.replace(/\.(drawio|xml)$/i, '') : null;
         const title = (pageName && !/^Page-?\d*$/i.test(pageName)) ? pageName : (fileTitle || 'drawio-import');
         state.diagramTitle = title;
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         state.connections.forEach(convertWaypointsToBends);
         setDirty(true);
         updateTitleVersionUI();
@@ -11403,9 +12109,13 @@
         // - Everything else (personal imports, tinted icons, pasted images)
         //   is content-deduplicated into imageTable and referenced '#<key>'.
         // Neither '@' nor '#' can start a real data URI.
-        // embedImages (File → Save with Embedded Images): skip the by-name
+        // embedImages (File → Save Self-Contained Copy): skip the by-name
         // mechanism so the file is self-contained for archival/off-site use -
-        // library icons then ride in imageTable like everything else.
+        // library icons then ride in imageTable like everything else. The menu
+        // item was called "Save with Embedded Images", which read as though a
+        // normal save left pasted images OUT - it does not, and never did. The
+        // only art a normal save omits is the stencil library, so the label is
+        // now "Save Self-Contained Copy".
         const bundledRef = new Map();
         if (!embedImages) {
             state.deviceTemplates.forEach(t => {
@@ -11446,7 +12156,7 @@
     }
     let autosaveTimer = null;
     function scheduleAutosave() {
-        if (EMBED) return;   // embedders never write the editor's autosave slot
+        if (EMBED || CCTEST) return;   // embedders and the test harness never write the editor's autosave slot
         if (autosaveTimer) clearTimeout(autosaveTimer);
         autosaveTimer = setTimeout(() => {
             autosaveTimer = null;
@@ -11497,10 +12207,45 @@
         }
     }
 
-    // Font stack for canvas ctx.font strings; falls back to the historical
-    // generic sans-serif when the object has no explicit family.
+    // The page's own font stack, read from the document rather than restated.
+    //
+    // An on-canvas label with no explicit family sets NO font-family attribute,
+    // so the SVG <text> inherits style.css's body rule. Anything that has to name
+    // a family instead - ctx.font for the raster export, the root attribute on a
+    // standalone .svg - must name that same stack or the two drift.
+    //
+    // They did drift: this returned the generic 'sans-serif', which Windows
+    // resolves to Arial while the canvas showed Segoe UI. Measured at 16px,
+    // "FauxDevice" is 84.5px in the export against 78.7px on canvas - and since
+    // labels are centred, that lands as ~3px of shift per side, plainly visible
+    // where a label sits against a zone edge. It also skewed the export BOUNDS,
+    // because ctxSpansWidth measures with this same family.
+    let uiFontStackCache = null;
+    function uiFontStack() {
+        if (uiFontStackCache) return uiFontStackCache;
+        const stack = (getComputedStyle(document.body).fontFamily || '').trim();
+        // A stack ctx.font cannot parse is assigned as a NO-OP - it silently
+        // leaves the previous font in place and the export would be wrong with
+        // nothing said. Probe once against a sentinel rather than assume.
+        let usable = false;
+        if (stack) {
+            const probe = document.createElement('canvas').getContext('2d');
+            probe.font = '10px monospace';
+            probe.font = '10px ' + stack;
+            usable = probe.font !== '10px monospace';
+        }
+        if (!usable && stack) {
+            console.warn('CrossCanvas: page font stack is not usable in ctx.font, ' +
+                'exports fall back to generic sans-serif:', stack);
+        }
+        uiFontStackCache = usable ? stack : 'sans-serif';
+        return uiFontStackCache;
+    }
+
+    // Font stack for canvas ctx.font strings; matches the on-canvas rendering
+    // when the object has no explicit family of its own.
     function ctxFamilyOf(obj) {
-        return fontStackOf(obj) || 'sans-serif';
+        return fontStackOf(obj) || uiFontStack();
     }
 
     // Widest rendered line of a spans block at font size fs (canvas measurement).
@@ -11627,10 +12372,8 @@
             // measure them like node labels, or pills at the diagram's edge
             // get cropped out of exports.
             if (conn.label) {
-                const mid = Math.floor(points.length / 2);
-                const even = points.length % 2 === 0;
-                const mx = even ? (points[mid - 1].x + points[mid].x) / 2 : points[mid].x;
-                const my = even ? (points[mid - 1].y + points[mid].y) / 2 : points[mid].y;
+                const la = connLabelAnchor(points, conn);
+                const mx = la.x, my = la.y;
                 const fs = conn.fontSize || 20;
                 const spans = conn.spans || [[{ text: conn.label, bold: false, italic: false }]];
                 const w = ctxSpansWidth(mctx, spans, fs, ctxFamilyOf(conn));
@@ -11920,6 +12663,35 @@
         return '';
     }
 
+    // Well-known hypervisor MAC OUIs. A hostname lies (a VM can be named after
+    // a Mario character); the NIC's OUI does not - a VMware/Hyper-V/KVM prefix
+    // IS a virtual machine. Immutable data (OUI assignments never change), so a
+    // small copy of this set also lives in canvas-wall-setup.sh's --scan
+    // builder; keep the two in sync if a hypervisor is ever added.
+    const VM_OUIS = new Set([
+        '000c29', '005056', '000569', '001c14',   // VMware
+        '00155d',                                  // Microsoft Hyper-V (dynamic MAC)
+        '080027',                                  // Oracle VirtualBox
+        '525400',                                  // QEMU / KVM / libvirt (Proxmox default)
+        '00163e',                                  // Xen / XenSource
+        '001c42'                                   // Parallels
+    ]);
+
+    // Guess a stencil from what an nmap scan actually knows: the MAC-vendor
+    // (OUI) line. Deliberately conservative - only device classes a vendor
+    // makes EXCLUSIVELY get a guess. A Cisco/Ubiquiti OUI (switch? AP? phone?
+    // camera?) stays blank rather than guess wrong; a generic icon beats a
+    // confidently-wrong one.
+    function guessNmapStencil(vendor, mac) {
+        const v = String(vendor || '').toLowerCase();
+        const oui = String(mac || '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 6);
+        if (VM_OUIS.has(oui) || /vmware|virtualbox|parallels|\bxen\b|qemu|\bkvm\b|proxmox/.test(v)) return 'vm';
+        if (/axis communication|hikvision|dahua|mobotix|hanwha|hangzhou/.test(v)) return 'camera';
+        if (/\bapc\b|american power|cyberpower|\beaton\b|tripp.?lite|schneider/.test(v)) return 'ups';
+        if (/\bzebra\b/.test(v)) return 'printer';
+        return '';
+    }
+
     // --- Vendor CSV profiles -------------------------------------------
     // Shared profile postProcess: group clients under the network device they
     // connect through, from a SINGLE export (no separate device file, no
@@ -12092,9 +12864,11 @@
             const fields = { 'IP-Address': cur.ip };
             if (cur.host) fields.Hostname = cur.host;
             if (cur.mac) fields['MAC Address'] = cur.mac;
-            if (cur.vendor) fields.Description = cur.vendor;
+            // nmap writes "(Unknown)" for an OUI it can't name - not a useful
+            // Description, and the OUI still feeds the stencil guess below.
+            if (cur.vendor && !/^unknown$/i.test(cur.vendor)) fields.Description = cur.vendor;
             records.push({ label: cur.host ? shortHostname(cur.host) : cur.ip,
-                           stencilName: '', fields: fields, x: null, y: null });
+                           stencilName: guessNmapStencil(cur.vendor, cur.mac), fields: fields, x: null, y: null });
             cur = null;
         };
         String(text).split(/\r?\n/).forEach(line => {
@@ -13175,7 +13949,7 @@
         state.devices = newDevices;
         state.zones = newZones;
         state.diagramTitle = (fileName || 'inventory').replace(/\.csv$/i, '');
-        state.diagramVersion = 1;
+        state.diagramVersion = 0;   // never saved yet; the first save writes v1
         setDirty(true);
         updateTitleVersionUI();
         resetTiers();
@@ -13336,7 +14110,9 @@
             // boxes/crop bounds measured under this stack. Set it on the root as
             // an INHERITED presentation attribute - text with its own explicit
             // font-family attribute still overrides it, so custom fonts survive.
-            clone.setAttribute('font-family', "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+            // Read from the document rather than restating the stack: a literal
+            // here silently drifts the day style.css changes.
+            clone.setAttribute('font-family', uiFontStack());
             // Background + grid: size the 100% rects to the exported area
             const bg = clone.querySelector('#canvas-bg');
             if (bg) {
@@ -13837,15 +14613,8 @@
             if (endArrow !== 'none' && endMarkerSize > 2) drawArrowhead(endArrow, origEnd, points[points.length - 1], endMarkerSize);
 
             if (conn.label) {
-                const mid = Math.floor(points.length / 2);
-                let mx, my;
-                if (points.length % 2 === 0) {
-                    mx = (points[mid - 1].x + points[mid].x) / 2;
-                    my = (points[mid - 1].y + points[mid].y) / 2;
-                } else {
-                    mx = points[mid].x;
-                    my = points[mid].y;
-                }
+                const la = connLabelAnchor(points, conn);
+                const mx = la.x, my = la.y;
                 const cfs = conn.fontSize || 20;
                 const cFamily = ctxFamilyOf(conn);
                 const cSpans = conn.spans || [[{ text: conn.label, bold: false, italic: false }]];
@@ -14649,15 +15418,8 @@
             if (nearest.distance < 15) {
                 // Check if this is near the main label area first
                 if (conn.label) {
-                    const mid = Math.floor(cPoints.length / 2);
-                    let mx, my;
-                    if (cPoints.length % 2 === 0) {
-                        mx = (cPoints[mid - 1].x + cPoints[mid].x) / 2;
-                        my = (cPoints[mid - 1].y + cPoints[mid].y) / 2;
-                    } else {
-                        mx = cPoints[mid].x;
-                        my = cPoints[mid].y;
-                    }
+                    const la = connLabelAnchor(cPoints, conn);
+                    const mx = la.x, my = la.y;
                     const fs = conn.fontSize || 20;
                     // Size the label target to the REAL label, not a fixed 60x30
                     // box: a wide/multi-line label used to overflow it, so a click
@@ -14744,15 +15506,8 @@
             const end = resolveConnEndpoint(conn, 'to');
             if (!start || !end) continue;
             const points = connRoutePoints(conn, start, end);
-            const mid = Math.floor(points.length / 2);
-            let mx, my;
-            if (points.length % 2 === 0) {
-                mx = (points[mid - 1].x + points[mid].x) / 2;
-                my = (points[mid - 1].y + points[mid].y) / 2;
-            } else {
-                mx = points[mid].x;
-                my = points[mid].y;
-            }
+            const la = connLabelAnchor(points, conn);
+            const mx = la.x, my = la.y;
             const fs = conn.fontSize || 20;
             // Check if click is near the label midpoint
             if (Math.abs(point.x - mx) < 60 && Math.abs(point.y - my) < 30) {
@@ -14827,7 +15582,41 @@
         devices: () => state.devices,
         zones: () => state.zones,
         zoom: () => state.zoom,
-        svg: () => canvas
+        svg: () => canvas,
+        // --- Themes (for the kiosk's rotate-to-avoid-burn-in mode) ----------
+        // theme() applies a theme's chrome vars exactly as the editor does.
+        // persist defaults to FALSE here: an embedder cycling themes on a timer
+        // must not stomp the operator's own saved editor preference.
+        // NOTE it restyles CHROME + defaults-for-new-objects only; existing
+        // devices/zones/connections keep their own colors (recolorAllToTheme is
+        // the editor-side, undoable op for that and is deliberately NOT exposed
+        // - it re-renders every layer, which would wipe a kiosk overlay's
+        // in-place DOM patches).
+        theme: (key, persist) => { applyTheme(key, persist === true); return key; },
+        // Restyle EXISTING objects to the active theme (same op as the editor's
+        // Recolor to Theme, same per-kind opts). Silent by default here: no undo
+        // snapshot, no dirty flag, and the embedder never saves - the board file
+        // on disk is untouched, only the in-memory copy is restyled.
+        // CAUTION for embedders: this re-renders the device, zone and connection
+        // layers, so any DOM an overlay patched in place is destroyed and its
+        // cached element references go stale. Re-scan after calling.
+        recolor: (opts) => {
+            // Copy, never mutate the caller's object: an embedder that passes
+            // the same opts every rotation would otherwise find it silently
+            // gaining a `silent` key it never set.
+            const o = Object.assign({ silent: true }, opts || {});
+            recolorAllToTheme(o);
+        },
+        // [{ id, label, group, canvasDark }] - canvasDark is the theme's own
+        // canvas color, so a host can background-match a theme without picking
+        // hexes by hand. null on 'classic' (which clears rather than sets).
+        themes: () => THEME_GROUPS.flatMap(([group, ids]) => ids.map(id => ({
+            id,
+            label: (THEMES[id] && THEMES[id].label) || id,
+            group,
+            canvasDark: (THEMES[id] && THEMES[id].chrome &&
+                         THEMES[id].chrome['--se-canvas-dark']) || null
+        }))).filter(t => THEMES[t.id])
     };
     // Pre-rename alias: kiosk layers built against window.NetDraw keep working
     // against a newer app.js during the CrossCanvas transition.
@@ -14847,7 +15636,9 @@
     // sample diagram once, on the first ever visit, so the canvas isn't blank.
     // Embed mode skips all of it - the host page loads its own content and a
     // kiosk must never block on a confirm() prompt.
-    const restored = EMBED ? false : maybeRestoreAutosave();
+    // CCTEST skips restore too: the prompt fires before tests.html can stub
+    // confirm(), and a Cancel there would clearAutosave() the developer's slot.
+    const restored = (EMBED || CCTEST) ? false : maybeRestoreAutosave();
     if (!restored && !EMBED) {
         let firstVisit = true;
         try { firstVisit = !localStorage.getItem('crosscanvas-visited'); } catch (e) { /* ignore */ }
@@ -14910,6 +15701,14 @@
             // inventory / text parsers (string -> {records,skipped,name} | null)
             parseARPText, parseDnsmasqLeases, parseNmap, parseISCDhcpdLeases,
             parseAnsibleInventory, genericInventoryRecords,
+            // routing: the single chokepoint every consumer goes through
+            // (render, export, hit-testing, annotations), plus the endpoint
+            // resolution in front of it, so a test can compute a connection's
+            // polyline exactly as the renderer does.
+            connRoutePoints, resolveConnEndpoint, routeOrthogonal, getAbsoluteAP, findNode,
+            refitBendsToPath, setNodeAPCount,
+            // label placement along that polyline (conn.labelT)
+            connLabelAnchor, connLabelT, getNearestT, getPointAlongPath,
             // pipeline (round-trip + theme regression)
             state, serializeDiagram, applyDiagramData, importGliffy,
             resetDocumentState, newDiagram, applyTheme, recolorAllToTheme,

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>social card compose</title>
+<style>
+    /* 1280x640 social card, RSConclave layout: brand + pitch left, the real
+       app fading in from the right, both halves in the SAME suite theme.
+       Shot by shoot.js - nothing here is hand-cropped. */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1280px; height: 640px; overflow: hidden; }
+    body {
+        position: relative;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        background: var(--bg);
+    }
+    /* The screenshot layer: right-aligned, dimmed, fading out leftward so the
+       panel text never fights it. Mask, not overlay - the card background
+       shows THROUGH, keeping the fade in-theme. */
+    .shot {
+        position: absolute; top: 0; right: 0; width: 1280px; height: 640px;
+        object-fit: cover; object-position: right top;
+        opacity: 0.6;
+        -webkit-mask-image: linear-gradient(90deg, transparent 41%, #000 68%);
+        mask-image: linear-gradient(90deg, transparent 41%, #000 68%);
+    }
+    .panel { position: absolute; inset: 0; padding: 64px 0 56px 76px; width: 620px; }
+    .brand { display: flex; align-items: center; gap: 22px; }
+    .brand img { width: 74px; height: 74px; }
+    .brand h1 { font-size: 62px; font-weight: 800; color: var(--txt); letter-spacing: -1px; }
+    .rule { width: 96px; height: 7px; border-radius: 4px; background: var(--accent); margin: 26px 0 30px; }
+    .head { font-size: 31px; line-height: 1.32; font-weight: 700; color: var(--txt); max-width: 540px; }
+    .head .a { color: var(--accent); }
+    .sub { font-size: 19px; line-height: 1.45; color: var(--dim); margin-top: 22px; max-width: 500px; }
+    .chips { position: absolute; left: 76px; bottom: 56px; display: flex; align-items: center; gap: 14px; }
+    .chip {
+        font-size: 16px; color: var(--txt); padding: 9px 20px;
+        border: 1px solid var(--border); border-radius: 999px;
+        white-space: nowrap;
+        background: color-mix(in srgb, var(--bg) 60%, transparent);
+    }
+    .dot { color: var(--dim); font-size: 14px; }
+    /* Suite card: no screenshot - the six app marks stand in for the product.
+       Same right-side placement as .shot, but no mask; the icons are the
+       composition, not a backdrop, so they keep full strength. */
+    .collage {
+        position: absolute; top: 50%; right: 84px; transform: translateY(-50%);
+        display: grid; grid-template-columns: repeat(3, 150px);
+        gap: 34px;
+    }
+    .collage img { width: 150px; height: 150px; filter: drop-shadow(0 10px 24px rgba(0,0,0,0.5)); }
+</style>
+</head>
+<body>
+<script>
+// Theme values are the suite roster's own (launchcanvas/public/themes.js is
+// the canonical copy) - bg is the theme's input/darkest, so the card reads as
+// a themed suite surface rather than a generic dark card.
+const THEMES = {
+    synthwave: { bg: '#120a24', txt: '#ece6ff', dim: '#a596c9', accent: '#ff4d8d', border: '#3a2560' },
+    blueprint: { bg: '#0e2136', txt: '#dfe9f5', dim: '#93aecb', accent: '#7fd4ff', border: '#2a4d73' },
+    nocturne:  { bg: '#1e1f29', txt: '#f8f8f2', dim: '#a3a9c9', accent: '#bd93f9', border: '#44475a' },
+    phosphor:  { bg: '#071007', txt: '#a8f0a0', dim: '#5c9e57', accent: '#39ff14', border: '#1e3a1a' },
+    amber:     { bg: '#100b04', txt: '#ffcc66', dim: '#a8813c', accent: '#ffb000', border: '#3a2a12' },
+    garnet:    { bg: '#240d14', txt: '#f2e6e9', dim: '#c39aa5', accent: '#d9556e', border: '#592433' },
+    arctic:    { bg: '#272c36', txt: '#eceff4', dim: '#9aa5b8', accent: '#88c0d0', border: '#434c5e' },
+};
+
+const CARDS = {
+    crosscanvas: {
+        theme: 'blueprint', name: 'CrossCanvas', icon: 'assets/crosscanvas.svg',
+        head: 'Draw the network you actually run, in a <span class="a">single HTML file</span> that works anywhere.',
+        sub: 'No accounts, no cloud, no build step. 55 network stencils, 29 themes, and it imports your Visio, Gliffy and draw.io diagrams.',
+        chips: ['Stencils', 'Themes', '.vsdx / .gliffy import', 'Offline'],
+        shot: 'bg/bg-crosscanvas.png',
+    },
+    pingcanvas: {
+        theme: 'nocturne', name: 'PingCanvas', icon: 'assets/pingcanvas.svg',
+        head: 'Your network diagram, <span class="a">with a pulse</span>.',
+        sub: 'Point it at the board you drew in CrossCanvas - every device with an address recolors as it answers, kiosk-ready, around the clock.',
+        chips: ['Kiosk', 'Ping sweep', 'SNMP layer', 'Docker'],
+        shot: 'bg/bg-pingcanvas.png',
+    },
+    snmpcanvas: {
+        theme: 'phosphor', name: 'SNMPCanvas', icon: 'assets/snmpcanvas.svg',
+        head: 'Poll your gear over SNMP and <span class="a">keep the history</span>.',
+        sub: 'CPU, temps, fans, PSUs, UPS runtime - v2c and v3, vendor-aware, stored in SQLite with a dependency-light UI.',
+        chips: ['v2c / v3', 'History', 'Vendor OIDs', 'Self-hosted'],
+        shot: 'bg/bg-snmpcanvas.png',
+    },
+    syslogcanvas: {
+        theme: 'amber', name: 'SyslogCanvas', icon: 'assets/syslogcanvas.svg',
+        head: 'Every syslog message, <span class="a">searchable the moment it lands</span>.',
+        sub: 'A self-hosted receiver and viewer: live tail, severity filters, device breakdowns, CSV export.',
+        chips: ['Live tail', 'Filters', 'Export', 'Docker'],
+        shot: 'bg/bg-syslogcanvas.png',
+    },
+    alertcanvas: {
+        theme: 'garnet', name: 'AlertCanvas', icon: 'assets/alertcanvas.svg',
+        head: 'When a threshold trips, <span class="a">you hear about it</span>.',
+        sub: 'Watches the suite’s monitoring feeds and raises alerts by email, ntfy push, or syslog - and clears them when things recover.',
+        chips: ['Email', 'ntfy', 'Syslog', 'Thresholds'],
+        shot: 'bg/bg-alertcanvas.png',
+    },
+    launchcanvas: {
+        theme: 'arctic', name: 'LaunchCanvas', icon: 'assets/launchcanvas.svg',
+        head: 'One login, <span class="a">every canvas</span>.',
+        sub: 'The suite’s front door: a tile launcher with sign-in, single sign-on to the other apps, and board uploads.',
+        chips: ['Portal', 'SSO', 'Boards', 'Docs'],
+        shot: 'bg/bg-launchcanvas.png',
+    },
+    suite: {
+        theme: 'synthwave', name: 'Canvas Suite', icon: 'assets/suite.svg',
+        head: 'Your network diagram becomes the <span class="a">live dashboard</span>.',
+        sub: 'Six self-hosted apps that share one board: draw it, ping it, poll it, tail it, alert on it, launch it all.',
+        chips: ['Draw', 'Ping', 'SNMP', 'Syslog', 'Alert', 'Launch'],
+        collage: ['crosscanvas', 'pingcanvas', 'snmpcanvas', 'syslogcanvas', 'alertcanvas', 'launchcanvas'],
+    },
+};
+
+const card = CARDS[new URLSearchParams(location.search).get('card')] || CARDS.crosscanvas;
+const t = THEMES[card.theme];
+for (const [k, v] of Object.entries(t)) document.documentElement.style.setProperty('--' + k, v);
+document.body.innerHTML = `
+    ${card.collage
+        ? `<div class="collage">${card.collage.map(a => `<img src="assets/${a}.svg">`).join('')}</div>`
+        : `<img class="shot" src="${card.shot}">`}
+    <div class="panel">
+        <div class="brand"><img src="${card.icon}"><h1>${card.name}</h1></div>
+        <div class="rule"></div>
+        <div class="head">${card.head}</div>
+        <div class="sub">${card.sub}</div>
+        <div class="chips">${card.chips.map(c => `<span class="chip">${c}</span>`).join('<span class="dot">·</span>')}</div>
+    </div>`;
+</script>
+</body>
+</html>

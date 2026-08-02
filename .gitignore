@@ -1,0 +1,4 @@
+# Shoot-rig outputs: screenshots and the headless-Chrome scratch profile.
+# The rig and its shot lists are tracked; what they produce is not.
+tools/shoot/cards/bg/
+tools/shoot/cards/out/
